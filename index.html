@@ -82,9 +82,10 @@
 
 // ============ 版本資訊 / 更新紀錄 ============
 // 每次交付新版本時，在最上面加一筆紀錄（日期為設計討論當下，非實際檔案時間戳）
-const GAME_VERSION = "v0.8.1";
+const GAME_VERSION = "v0.9.1";
 const CHANGELOG = [
-  { v:"0.8.1", note:"背景音樂音量調大(整體音量提升約2倍，貝斯與旋律音符也各自加強)，之前太小聲幾乎聽不到的問題已修正；音效音量維持不變。" },
+  { v:"0.9.1", note:"上方HUD資訊列文字全面放大：金幣圖示與數字、關卡/波次資訊、英雄等級職業擊殺數，字級明顯加大並加粗，填滿原本偏空的上方橫列空間，資訊更醒目好讀。" },
+  { v:"0.9.0", note:"手機觸控雙指分工優化：下方按鈕列重新編排——左側改放堡壘耐久度(貼齊城牆位置，更直覺)，正中集中暫停／選單／加速(放大尺寸)，右下角集中購買新兵砲／英雄技能a・b／技能商店(右指專屬固定區、加大尺寸方便拇指點按)；上方HUD空間改放英雄等級/職業/擊殺數資訊；金幣圖示與點擊判定範圍一併放大。整體讓左指專心負責棋盤(放置/選取/合成)、右指專心負責固定按鈕區，雙指分工更接近桌機「左手鍵盤熱鍵＋右手滑鼠」的操作邏輯。" },
   { v:"0.8.0", note:"新增音樂與音效系統！使用即時合成音效(不需外部音檔)：砲塔開火/命中/擊沉、金幣拾取、砲塔放置與合成升級、英雄技能施放、波次開始(含猛攻警報)、堡壘受擊、關卡勝利/敗北皆有專屬音效；背景加入輕快的海盜風循環配樂。右上角新增🔊按鈕可一鍵靜音/開啟，並會記住你的選擇。" },
   { v:"0.7.4", note:"船隻真實感再加強：水面下加了會隨波紋晃動的倒影、船側多了細碎浪花泡沫、桅杆加上支索與帆布皺褶、重甲船加上一排船艙圓窗，整體更像「真的浮在海面上」而不是貼紙船。" },
   { v:"0.7.3", note:"船隻美術全面加強立體感：船身改為漸層明暗(上淺下深)＋橫向木板紋理＋吃水陰影橢圓，讓船看起來真的「壓」在水面上；船帆加上漸層光影；所有船隻統一自動附加行進水花，不再只有快艇有。" },
@@ -119,7 +120,7 @@ const AudioSys = (function(){
       ctx = new AC();
       masterGain = ctx.createGain(); masterGain.gain.value = muted ? 0 : 1;
       masterGain.connect(ctx.destination);
-      musicGain = ctx.createGain(); musicGain.gain.value = 0.55;
+      musicGain = ctx.createGain(); musicGain.gain.value = 0.25;
       musicGain.connect(masterGain);
       sfxGain = ctx.createGain(); sfxGain.gain.value = 0.55;
       sfxGain.connect(masterGain);
@@ -212,13 +213,13 @@ const AudioSys = (function(){
     if(!ctx) return;
     while(nextNoteTime < ctx.currentTime + 0.4){
       const bassDeg = scale[bassSeq[beatIdx%bassSeq.length]%scale.length];
-      scheduleMusicNote(noteFreq(bassDeg-12), nextNoteTime, beatSec*0.85, 'triangle', 0.16);
+      scheduleMusicNote(noteFreq(bassDeg-12), nextNoteTime, beatSec*0.85, 'triangle', 0.075);
       if(beatIdx%2===1){
         const mDeg = scale[(beatIdx*3+((beatIdx*7)%5))%scale.length];
-        scheduleMusicNote(noteFreq(mDeg+12), nextNoteTime+beatSec*0.5, beatSec*0.35, 'square', 0.09);
+        scheduleMusicNote(noteFreq(mDeg+12), nextNoteTime+beatSec*0.5, beatSec*0.35, 'square', 0.035);
       }
       if(beatIdx%8===6){
-        scheduleMusicNote(noteFreq(scale[6]+12), nextNoteTime, beatSec*0.3, 'triangle', 0.11);
+        scheduleMusicNote(noteFreq(scale[6]+12), nextNoteTime, beatSec*0.3, 'triangle', 0.05);
       }
       nextNoteTime += beatSec;
       beatIdx++;
@@ -281,10 +282,10 @@ function resizeCanvas(){
   const availH = (wrapEl.clientHeight || window.innerHeight) - reserveH;
 
   GRID_Y = clamp(Math.round(availH * 0.115), 44, 92);
-  SHOP_BAR_H = clamp(Math.round(availH * 0.16), 72, 116);
+  SHOP_BAR_H = clamp(Math.round(availH * 0.19), 84, 132);
   let cellH = Math.floor((availH - GRID_Y - SHOP_BAR_H) / ROWS);
   if(cellH < 34){
-    GRID_Y = 44; SHOP_BAR_H = 72;
+    GRID_Y = 44; SHOP_BAR_H = 84;
     cellH = Math.floor((availH - GRID_Y - SHOP_BAR_H) / ROWS);
   }
   CELL_H = Math.max(30, cellH);
@@ -1485,44 +1486,31 @@ function drawHUD(){
 
   const midY = barH0/2;
 
-  ctx.font = Math.round(24*s)+'px sans-serif';
+  ctx.font = Math.round(32*s)+'px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillText('💰', 16, midY);
-  ctx.fillStyle = '#ffd54f'; ctx.font = 'bold ' + Math.round(22*s) + 'px sans-serif';
-  ctx.fillText(Math.floor(G.gold), 16 + Math.round(30*s), midY);
+  ctx.fillStyle = '#ffd54f'; ctx.font = 'bold ' + Math.round(29*s) + 'px sans-serif';
+  ctx.fillText(Math.floor(G.gold), 16 + Math.round(38*s), midY);
 
-  ctx.fillStyle = '#eaf2fb'; ctx.font = 'bold ' + Math.round(18*s) + 'px sans-serif'; ctx.textAlign='center';
-  ctx.fillText('第 ' + G.level + ' 關 · ' + currentSeries().name, CANVAS_W/2, midY - Math.round(11*s));
-  ctx.font = Math.round(13*s)+'px sans-serif'; ctx.fillStyle = '#a9c6e8';
+  ctx.fillStyle = '#eaf2fb'; ctx.font = 'bold ' + Math.round(23*s) + 'px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('第 ' + G.level + ' 關 · ' + currentSeries().name, CANVAS_W/2, midY - Math.round(14*s));
+  ctx.font = 'bold ' + Math.round(17*s)+'px sans-serif'; ctx.fillStyle = '#c7ddf5';
   let waveText;
   if(G.levelComplete) waveText = '關卡完成！';
   else if(G.gameOver) waveText = '防線失守...';
   else if(G.waveIdx === -1) waveText = '準備中 ' + Math.ceil(G.prepTimer) + '...';
   else if(G.spawning || G.enemies.length>0) waveText = '第 ' + (G.waveIdx+1) + ' / ' + G.waves.length + ' 波' + (G.currentIsSurge?' ⚠️猛攻':'');
   else waveText = '下一波倒數 ' + Math.ceil(G.betweenTimer||0);
-  ctx.fillText(waveText, CANVAS_W/2, midY + Math.round(11*s));
+  ctx.fillText(waveText, CANVAS_W/2, midY + Math.round(14*s));
 
-  const btnH=Math.round(32*s);
-  const menuBtnW=Math.round(44*s), pauseBtnW=Math.round(40*s), btnGap=Math.round(8*s);
-  const menuBtnX = CANVAS_W - menuBtnW - Math.round(10*s);
-  const pauseBtnX = menuBtnX - btnGap - pauseBtnW;
-  drawButton(pauseBtnX, midY-btnH/2, pauseBtnW, btnH, G.paused?'▶':'⏸', '#37474f', Math.round(16*s));
-  drawButton(menuBtnX, midY-btnH/2, menuBtnW, btnH, '☰', '#37474f', Math.round(16*s));
-  hudRects.pause = {x:pauseBtnX, y:midY-btnH/2, w:pauseBtnW, h:btnH};
-  hudRects.menu = {x:menuBtnX, y:midY-btnH/2, w:menuBtnW, h:btnH};
-
-  const barW=Math.round(160*s), barH=Math.round(14*s);
-  const barX = pauseBtnX - Math.round(18*s) - barW, barY=midY-barH-Math.round(6*s);
-  ctx.textAlign='left'; ctx.fillStyle='#a9c6e8'; ctx.font=Math.round(11*s)+'px sans-serif';
-  ctx.fillText('堡壘耐久度', barX, barY-Math.round(7*s));
-  ctx.fillStyle = '#1a2f42'; ctx.fillRect(barX,barY,barW,barH);
-  const hpRatio = G.baseHP/G.baseMaxHP;
-  ctx.fillStyle = hpRatio>0.5?'#66bb6a':hpRatio>0.25?'#ffa726':'#e53935';
-  ctx.fillRect(barX,barY,barW*hpRatio,barH);
-  ctx.strokeStyle='#0e2a44'; ctx.strokeRect(barX,barY,barW,barH);
-  const speedBtnY = barY+barH+Math.round(6*s), speedBtnW=Math.round(54*s), speedBtnH=Math.round(20*s);
-  drawButton(barX, speedBtnY, speedBtnW, speedBtnH, G.speedMul===2?'x2':'x1', '#2e5a3e', Math.round(12*s));
-  hudRects.speed = {x:barX, y:speedBtnY, w:speedBtnW, h:speedBtnH};
+  // 暫停／選單／加速／堡壘耐久度 已移到下方按鈕列(手機雙指分工用)，
+  // 這裡空出來的右側改放英雄狀態(等級/職業/累積擊殺)，純資訊、不需點擊，放大加強存在感。
+  const classInfo = HERO_TREE[G.hero.finalClass||G.hero.baseClass||'recruit'];
+  ctx.textAlign='right';
+  ctx.fillStyle='#ffd54f'; ctx.font='bold '+Math.round(20*s)+'px sans-serif';
+  ctx.fillText(classInfo.emoji+' Lv.'+G.hero.level+' '+classInfo.name, CANVAS_W-16, midY-Math.round(12*s));
+  ctx.fillStyle='#c7ddf5'; ctx.font='bold '+Math.round(15*s)+'px sans-serif';
+  ctx.fillText('累積擊殺 '+G.hero.kills, CANVAS_W-16, midY+Math.round(12*s));
 }
 
 function drawButton(x,y,w,h,label,bg,fontSize){
@@ -2168,10 +2156,11 @@ function drawProjectiles(){
   }
 }
 
+const COIN_HIT_RADIUS = 42; // 原本30，放大方便手機觸控點中
 function drawCoins(){
   for(const c of G.coins){
     ctx.save();
-    ctx.font='30px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font='42px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     const bounce = Math.sin(Date.now()/150 + c.x)*2;
     ctx.fillText('💰', c.x, c.y+bounce);
     ctx.restore();
@@ -2222,75 +2211,109 @@ function drawShopBar(){
   ctx.fillStyle = '#20344a';
   ctx.fillRect(0,y0,CANVAS_W,barH);
 
-  const bx=Math.round(18*s), by=y0+Math.round(barH*0.14), bw=Math.round(200*s), bh=Math.round(barH*0.72);
-  shopBuyRect = {x:bx,y:by,w:bw,h:bh};
+  // ===== 左側：堡壘耐久度，貼齊城牆位置(左指區域上方就是城牆本體) =====
+  const hpBarX = Math.round(16*s), hpBarW = Math.round(150*s), hpBarH = Math.round(16*s);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#a9c6e8'; ctx.font=Math.round(12*s)+'px sans-serif';
+  ctx.fillText('堡壘耐久度', hpBarX, y0+Math.round(barH*0.24));
+  const hpBarY = y0 + Math.round(barH*0.34);
+  ctx.fillStyle = '#1a2f42'; ctx.fillRect(hpBarX,hpBarY,hpBarW,hpBarH);
+  const hpRatio = clamp(G.baseHP/G.baseMaxHP, 0, 1);
+  ctx.fillStyle = hpRatio>0.5?'#66bb6a':hpRatio>0.25?'#ffa726':'#e53935';
+  ctx.fillRect(hpBarX,hpBarY,hpBarW*hpRatio,hpBarH);
+  ctx.strokeStyle='#0e2a44'; ctx.strokeRect(hpBarX,hpBarY,hpBarW,hpBarH);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#eaf2fb'; ctx.font='bold '+Math.round(10*s)+'px sans-serif';
+  ctx.fillText(Math.max(0,Math.ceil(G.baseHP))+' / '+G.baseMaxHP, hpBarX+hpBarW/2, hpBarY+hpBarH/2+1);
+
+  // ===== 正中：暫停／選單／加速，放大置中(拇指偶爾伸過去戳一下即可) =====
+  const btnH = Math.round(40*s);
+  const pauseBtnW = Math.round(52*s), menuBtnW = Math.round(56*s), speedBtnW = Math.round(60*s);
+  const midGap = Math.round(10*s);
+  const midTotalW = pauseBtnW+midGap+menuBtnW+midGap+speedBtnW;
+  const midStartX = Math.round(CANVAS_W/2 - midTotalW/2);
+  const midY = y0 + Math.round(barH*0.5) - btnH/2;
+  const pauseBtnX = midStartX;
+  const menuBtnX = pauseBtnX + pauseBtnW + midGap;
+  const speedBtnX = menuBtnX + menuBtnW + midGap;
+  drawButton(pauseBtnX, midY, pauseBtnW, btnH, G.paused?'▶':'⏸', '#37474f', Math.round(18*s));
+  drawButton(menuBtnX, midY, menuBtnW, btnH, '☰', '#37474f', Math.round(18*s));
+  drawButton(speedBtnX, midY, speedBtnW, btnH, G.speedMul===2?'x2':'x1', '#2e5a3e', Math.round(15*s));
+  hudRects.pause = {x:pauseBtnX, y:midY, w:pauseBtnW, h:btnH};
+  hudRects.menu = {x:menuBtnX, y:midY, w:menuBtnW, h:btnH};
+  hudRects.speed = {x:speedBtnX, y:midY, w:speedBtnW, h:btnH};
+
+  // ===== 右下：購買新兵砲／技能a・b／技能商店，全部集中在右指固定區、放大尺寸 =====
+  const iconSize = Math.round(barH*0.6);
+  const buyW = Math.round(96*s);
+  const shopBtnW = Math.round(96*s);
+  const rGap = Math.round(10*s);
+  const rightPad = Math.round(16*s);
+  const rightTotalW = buyW + rGap + iconSize + rGap + iconSize + rGap + shopBtnW;
+  let rx = CANVAS_W - rightTotalW - rightPad;
+  const ry = y0 + Math.round(barH*0.5) - iconSize/2;
+
   const canBuy = G.gold >= TOWER_COST;
+  shopBuyRect = {x:rx,y:ry,w:buyW,h:iconSize};
   ctx.save();
-  roundRect(bx,by,bw,bh,10);
+  roundRect(rx,ry,buyW,iconSize,10);
   ctx.fillStyle = G.placing ? '#ffb300' : (canBuy? '#2e7d32' : '#4a4a4a');
   ctx.fill();
   ctx.strokeStyle='#efd9a5'; ctx.lineWidth=2; ctx.stroke();
-  ctx.font=Math.round(26*s)+'px sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
-  ctx.fillText(NODES.T0.emoji, bx+10, by+bh/2);
-  ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(14*s)+'px sans-serif';
-  ctx.fillText('購買新兵砲（F）', bx+48, by+bh*0.34);
-  ctx.fillStyle='#ffe082'; ctx.font=Math.round(12*s)+'px sans-serif';
-  ctx.fillText('花費 ' + TOWER_COST + ' 💰' + (G.placing? '（點戰場放置）':''), bx+48, by+bh*0.68);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font=Math.round(iconSize*0.42)+'px sans-serif'; ctx.fillStyle='#fff';
+  ctx.fillText(NODES.T0.emoji, rx+buyW/2, ry+iconSize*0.36);
+  ctx.font='bold '+Math.round(iconSize*0.19)+'px sans-serif'; ctx.fillStyle='#ffe082';
+  ctx.fillText(TOWER_COST+'💰'+(G.placing?'（放置中）':''), rx+buyW/2, ry+iconSize*0.76);
   ctx.restore();
+  rx += buyW + rGap;
 
-  ctx.textAlign='left';
-  const infoX = bx+bw+Math.round(24*s);
-  ctx.font='bold '+Math.round(12*s)+'px sans-serif'; ctx.fillStyle='#ffd54f';
-  ctx.fillText('加農砲後可選 💣爆破／🎯精準／❄️控制', infoX, y0+barH*0.3);
-  ctx.font=Math.round(10*s)+'px sans-serif'; ctx.fillStyle='#a9c6e8';
-  ctx.fillText('兩座「完全同型」的塔即可合成升級', infoX, y0+barH*0.56);
-
-  // 英雄狀態 + 技能施放圖示 + 技能商店按鈕
-  const classInfo = HERO_TREE[G.hero.finalClass||G.hero.baseClass||'recruit'];
-  const iconSize = Math.round(barH*0.5);
-  const shopBtnW = Math.round(78*s);
-  const heroBlockW = Math.round(150*s) + iconSize*2 + 24 + shopBtnW;
-  const hpx = CANVAS_W - heroBlockW - Math.round(16*s);
-  ctx.fillStyle='#ffd54f'; ctx.font='bold '+Math.round(13*s)+'px sans-serif';
-  ctx.fillText(classInfo.emoji+' Lv.'+G.hero.level+' '+classInfo.name, hpx, y0+barH*0.28);
-  ctx.fillStyle='#a9c6e8'; ctx.font=Math.round(10*s)+'px sans-serif';
-  ctx.fillText('累積擊殺 '+G.hero.kills, hpx, y0+barH*0.5);
-
-  const iconY = y0+barH*0.58;
-  const iconStartX = hpx + Math.round(150*s);
   const activeClass = G.hero.finalClass || G.hero.baseClass;
-  ['a','b'].forEach((slot,idx)=>{
-    const ix = iconStartX + idx*(iconSize+8);
+  ['a','b'].forEach((slot)=>{
+    const ix = rx;
     const unlocked = !!activeClass && G.hero.abilityLevel[slot]>0;
     ctx.save();
-    roundRect(ix,iconY,iconSize,iconSize,8);
+    roundRect(ix,ry,iconSize,iconSize,10);
     ctx.fillStyle = unlocked ? '#37474f' : '#2a2a2a';
     ctx.fill();
     ctx.strokeStyle='#efd9a5'; ctx.lineWidth=1.5; ctx.stroke();
     ctx.textAlign='center'; ctx.textBaseline='middle';
     if(unlocked){
       const def = ABILITIES[activeClass][slot];
-      ctx.font=Math.round(iconSize*0.5)+'px sans-serif'; ctx.fillStyle='#fff';
-      ctx.fillText(def.emoji, ix+iconSize/2, iconY+iconSize/2);
+      ctx.font=Math.round(iconSize*0.48)+'px sans-serif'; ctx.fillStyle='#fff';
+      ctx.fillText(def.emoji, ix+iconSize/2, ry+iconSize/2);
       const cd = G.hero.abilityCd[slot];
       if(cd>0){
-        ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(ix,iconY,iconSize,iconSize);
-        ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(iconSize*0.32)+'px sans-serif';
-        ctx.fillText(Math.ceil(cd), ix+iconSize/2, iconY+iconSize/2);
+        ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(ix,ry,iconSize,iconSize);
+        ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(iconSize*0.3)+'px sans-serif';
+        ctx.fillText(Math.ceil(cd), ix+iconSize/2, ry+iconSize/2);
       }
     } else {
-      ctx.font=Math.round(iconSize*0.4)+'px sans-serif'; ctx.fillStyle='#777';
-      ctx.fillText('🔒', ix+iconSize/2, iconY+iconSize/2);
+      ctx.font=Math.round(iconSize*0.38)+'px sans-serif'; ctx.fillStyle='#777';
+      ctx.fillText('🔒', ix+iconSize/2, ry+iconSize/2);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
-    ctx.font='bold '+Math.round(iconSize*0.24)+'px sans-serif'; ctx.fillStyle='#ffe082';
-    ctx.fillText(slot==='a' ? 'A' : 'S', ix+2, iconY+1);
+    ctx.font='bold '+Math.round(iconSize*0.22)+'px sans-serif'; ctx.fillStyle='#ffe082';
+    ctx.fillText(slot==='a' ? 'A' : 'S', ix+3, ry+2);
     ctx.restore();
-    heroAbilityRects[slot] = { x:ix, y:iconY, w:iconSize, h:iconSize };
+    heroAbilityRects[slot] = { x:ix, y:ry, w:iconSize, h:iconSize };
+    rx += iconSize + rGap;
   });
-  const shopBtnX = iconStartX + 2*(iconSize+8);
-  drawButton(shopBtnX, iconY, shopBtnW, iconSize, '🎖️技能(D)', '#5d4037', Math.round(11*s));
-  heroShopBtnRect = { x:shopBtnX, y:iconY, w:shopBtnW, h:iconSize };
+
+  const shopBtnX = rx;
+  drawButton(shopBtnX, ry, shopBtnW, iconSize, '🎖️技能(D)', '#5d4037', Math.round(12*s));
+  heroShopBtnRect = { x:shopBtnX, y:ry, w:shopBtnW, h:iconSize };
+
+  // ===== 中間偏左空隙：合成提示文字(空間不夠時自動隱藏，不硬擠) =====
+  const infoX = hpBarX + hpBarW + Math.round(28*s);
+  const infoMaxX = midStartX - Math.round(20*s);
+  if(infoMaxX - infoX > 150*s){
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.font='bold '+Math.round(12*s)+'px sans-serif'; ctx.fillStyle='#ffd54f';
+    ctx.fillText('加農砲後可選 💣爆破／🎯精準／❄️控制', infoX, y0+barH*0.3);
+    ctx.font=Math.round(10*s)+'px sans-serif'; ctx.fillStyle='#a9c6e8';
+    ctx.fillText('兩座「完全同型」的塔即可合成升級', infoX, y0+barH*0.56);
+  }
 }
 
 function drawSelectionHint(){
@@ -2486,6 +2509,23 @@ function drawGame(){
 }
 
 // ============ 選單畫面 ============
+// 關卡選擇格子的版面計算：改為依實際 CANVAS_W 動態縮放，
+// 避免原本寫死 84px*10格 (共912px) 在畫布較窄時超出畫布邊界被裁掉。
+function menuGridLayout(){
+  const cols = 10;
+  const marginX = 20;
+  const gapX = clamp(Math.round(CANVAS_W*0.008), 4, 8);
+  const avail = CANVAS_W - marginX*2 - (cols-1)*gapX;
+  const boxW = clamp(Math.floor(avail/cols), 30, 84);
+  const boxH = Math.round(boxW*64/84);
+  const gapY = Math.max(10, Math.round(boxH*16/64));
+  const totalW = cols*boxW + (cols-1)*gapX;
+  const startX = (CANVAS_W-totalW)/2;
+  const startY = 168;
+  const s = boxW/84; // 用來等比縮放格內文字大小
+  return {boxW,boxH,gapX,gapY,startX,startY,cols,s};
+}
+
 function drawMenu(){
   ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
   const bg = ctx.createLinearGradient(0,0,0,CANVAS_H);
@@ -2498,17 +2538,14 @@ function drawMenu(){
   ctx.fillStyle='#cfe3f5'; ctx.font='16px sans-serif';
   ctx.fillText('放置砲塔、合成升級、擊退海盜艦隊！', CANVAS_W/2, 125);
 
-  const boxW=84, boxH=64, gapX=8, gapY=16;
-  const totalW = 10*boxW + 9*gapX;
-  const startX = (CANVAS_W-totalW)/2;
-  const startY = 168;
+  const {boxW, boxH, gapX, gapY, startX, startY, s} = menuGridLayout();
   for(let n=1;n<=MAX_LEVEL;n++){
     const idx=n-1;
     const col = idx%10, row = Math.floor(idx/10);
     const x = startX + col*(boxW+gapX);
     const y = startY + row*(boxH+gapY);
     if(col===0){
-      ctx.textAlign='left'; ctx.fillStyle='#7fa8cc'; ctx.font='bold 12px sans-serif';
+      ctx.textAlign='left'; ctx.fillStyle='#7fa8cc'; ctx.font='bold '+Math.round(12*s)+'px sans-serif';
       ctx.fillText('系列 '+(row+1)+'：'+MAP_SERIES[row].name, x, y-4);
     }
     const unlocked = G.unlocked[n];
@@ -2518,17 +2555,17 @@ function drawMenu(){
     ctx.fill();
     ctx.strokeStyle = unlocked ? '#ffd54f' : '#5a7085';
     ctx.lineWidth=2; ctx.stroke();
-    ctx.font='bold 22px sans-serif'; ctx.fillStyle = unlocked?'#fff':'#8ba0b3';
+    ctx.font='bold '+Math.round(22*s)+'px sans-serif'; ctx.fillStyle = unlocked?'#fff':'#8ba0b3';
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(unlocked ? String(n) : '🔒', x+boxW/2, y+boxH/2-8);
-    ctx.font='10px sans-serif';
-    ctx.fillText(unlocked ? ('第 '+n+' 關') : '未解鎖', x+boxW/2, y+boxH/2+18);
+    ctx.fillText(unlocked ? String(n) : '🔒', x+boxW/2, y+boxH/2-8*s);
+    ctx.font=Math.round(10*s)+'px sans-serif';
+    ctx.fillText(unlocked ? ('第 '+n+' 關') : '未解鎖', x+boxW/2, y+boxH/2+18*s);
     if(n%20===0 && unlocked){
-      ctx.font='16px sans-serif';
-      ctx.fillText('👹', x+boxW-13, y+13);
+      ctx.font=Math.round(16*s)+'px sans-serif';
+      ctx.fillText('👹', x+boxW-13*s, y+13*s);
     } else if(n%5===0 && unlocked){
-      ctx.font='14px sans-serif';
-      ctx.fillText('👑', x+boxW-12, y+12);
+      ctx.font=Math.round(14*s)+'px sans-serif';
+      ctx.fillText('👑', x+boxW-12*s, y+12*s);
     }
     ctx.restore();
   }
@@ -2629,10 +2666,7 @@ function handleMenuClick(x,y){
     G.showChangelog = true;
     return;
   }
-  const boxW=84, boxH=64, gapX=8, gapY=16;
-  const totalW = 10*boxW + 9*gapX;
-  const startX = (CANVAS_W-totalW)/2;
-  const startY = 168;
+  const {boxW, boxH, gapX, gapY, startX, startY} = menuGridLayout();
   for(let n=1;n<=MAX_LEVEL;n++){
     const idx=n-1;
     const col = idx%10, row = Math.floor(idx/10);
@@ -2732,7 +2766,7 @@ function handlePlayingClick(x,y){
   for(let i=G.coins.length-1;i>=0;i--){
     const c = G.coins[i];
     const dx=x-c.x, dy=y-c.y;
-    if(dx*dx+dy*dy <= 30*30){
+    if(dx*dx+dy*dy <= COIN_HIT_RADIUS*COIN_HIT_RADIUS){
       G.gold += c.value;
       spawnFloat(c.x,c.y,'+'+c.value,'#ffd54f');
       G.coins.splice(i,1);
