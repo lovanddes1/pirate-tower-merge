@@ -1,0 +1,2921 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>海盜砲塔合成防禦戰</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: radial-gradient(circle at 50% 0%, #1b3a5c 0%, #0b1f33 60%, #060f1a 100%);
+    font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+    overflow: hidden; overscroll-behavior: none; user-select: none;
+  }
+  #wrap {
+    width: 100vw; height: 100vh;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    position: relative;
+  }
+  canvas {
+    background: #0e2a44;
+    max-width: 94%;
+    max-height: 90%;
+    width: auto; height: auto;
+    border: 4px solid #6b4423;
+    border-radius: 10px;
+    box-shadow: 0 0 0 4px #3e2b1a, 0 10px 40px rgba(0,0,0,0.6);
+    touch-action: none;
+    cursor: pointer;
+  }
+  /* 全螢幕模式：取消寬高上限，讓畫布依照 JS 算出的實際可用空間完全填滿螢幕 */
+  #wrap.fs-mode canvas {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  #wrap.fs-mode #hint,
+  #wrap.fs-mode #fsBtn { display: none; }
+  #hint {
+    color: #cfe3f5; opacity:0.75; font-size:13px; margin-top:6px; text-align:center;
+    max-width:94%;
+  }
+  #fsBtn {
+    position: absolute; top: 10px; left: 10px; z-index: 10;
+    background:#37474f; color:#fff; border:2px solid #6b4423; border-radius:8px;
+    padding:8px 14px; font-size:14px; font-family:inherit; cursor:pointer;
+  }
+  #fsBtn:active{ background:#546e7a; }
+  #muteBtn {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    background:#37474f; color:#fff; border:2px solid #6b4423; border-radius:8px;
+    padding:8px 12px; font-size:16px; font-family:inherit; cursor:pointer;
+    width:44px; text-align:center;
+  }
+  #muteBtn:active{ background:#546e7a; }
+  #wrap.fs-mode #muteBtn { display: none; }
+
+  /* 手機仍為直向時的保險機制：用 CSS 把整個畫面轉 90 度撐滿螢幕，
+     模擬橫向全螢幕效果（給不支援 screen.orientation.lock 的瀏覽器，如 iOS Safari）。
+     只要瀏覽器實際支援自動橫向鎖定，畫面會直接變成真的橫向，這段CSS就不會生效。 */
+  @media screen and (max-width: 900px) and (orientation: portrait) {
+    #wrap {
+      position: fixed;
+      top: 0; left: 100%;
+      width: 100vh;
+      height: 100vw;
+      transform-origin: top left;
+      transform: rotate(90deg);
+    }
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <button id="fsBtn" type="button">⛶ 全螢幕橫向</button>
+  <button id="muteBtn" type="button">🔊</button>
+  <canvas id="game"></canvas>
+  <div id="hint">滑鼠點擊操作；手機/平板可用觸控點按<br>建議點左上角「⛶全螢幕橫向」或將手機轉為橫向以獲得最佳畫面<br>鍵盤熱鍵：F 購買新兵砲／A・S 施放英雄技能／D 英雄技能商店</div>
+</div>
+<script>
+(function(){
+"use strict";
+
+// ============ 版本資訊 / 更新紀錄 ============
+// 每次交付新版本時，在最上面加一筆紀錄（日期為設計討論當下，非實際檔案時間戳）
+const GAME_VERSION = "v0.9.1";
+const CHANGELOG = [
+  { v:"0.9.1", note:"上方HUD資訊列文字全面放大：金幣圖示與數字、關卡/波次資訊、英雄等級職業擊殺數，字級明顯加大並加粗，填滿原本偏空的上方橫列空間，資訊更醒目好讀。" },
+  { v:"0.9.0", note:"手機觸控雙指分工優化：下方按鈕列重新編排——左側改放堡壘耐久度(貼齊城牆位置，更直覺)，正中集中暫停／選單／加速(放大尺寸)，右下角集中購買新兵砲／英雄技能a・b／技能商店(右指專屬固定區、加大尺寸方便拇指點按)；上方HUD空間改放英雄等級/職業/擊殺數資訊；金幣圖示與點擊判定範圍一併放大。整體讓左指專心負責棋盤(放置/選取/合成)、右指專心負責固定按鈕區，雙指分工更接近桌機「左手鍵盤熱鍵＋右手滑鼠」的操作邏輯。" },
+  { v:"0.8.0", note:"新增音樂與音效系統！使用即時合成音效(不需外部音檔)：砲塔開火/命中/擊沉、金幣拾取、砲塔放置與合成升級、英雄技能施放、波次開始(含猛攻警報)、堡壘受擊、關卡勝利/敗北皆有專屬音效；背景加入輕快的海盜風循環配樂。右上角新增🔊按鈕可一鍵靜音/開啟，並會記住你的選擇。" },
+  { v:"0.7.4", note:"船隻真實感再加強：水面下加了會隨波紋晃動的倒影、船側多了細碎浪花泡沫、桅杆加上支索與帆布皺褶、重甲船加上一排船艙圓窗，整體更像「真的浮在海面上」而不是貼紙船。" },
+  { v:"0.7.3", note:"船隻美術全面加強立體感：船身改為漸層明暗(上淺下深)＋橫向木板紋理＋吃水陰影橢圓，讓船看起來真的「壓」在水面上；船帆加上漸層光影；所有船隻統一自動附加行進水花，不再只有快艇有。" },
+  { v:"0.7.2", note:"補齊船隻美術：弓箭海盜、鐵盾兵、潛水海盜、掌旗官搭船時原本都共用「新兵小艇」外觀，現在各自有專屬船型(弓艦/鐵甲艦/潛水艇/紫旗艦)，一眼就能認出海上來的是哪種敵人。" },
+  { v:"0.7.1", note:"海盜整體移動速度調慢(全域速度倍率0.7)，讓玩家有更充裕時間反應與部署。" },
+  { v:"0.7.0", note:"英雄技能改為 Lv5 選定主職業(戰士/弓手/法師)後即可開始學習與施放專屬技能，不必等到 Lv10 覺醒最終職業；新增鍵盤熱鍵：F 購買新兵砲、A／S 施放英雄技能 a／b、D 開關英雄技能商店，方便桌機快節奏操作。" },
+  { v:"0.6.0", note:"新增城牆主角系統：左側改為完整城牆美術，主角站上城牆自動攻擊；全場擊殺數(跨關卡累積)驅動英雄升級，Lv5選主職業(戰士/弓手/法師)、Lv10再選最終職業(聖騎士/狂戰士、遊俠/狙擊手、元素使/咒術師)；每個最終職業2個主動技能可用金幣升3級，商店列新增技能圖示與英雄技能商店面板。" },
+  { v:"0.5.0", note:"關卡擴充為40關；每10關切換一組地圖系列(家鄉海域/迷霧礁岩/熔岩群島/幽靈海域，各自不同配色)；每20關(20、40)新增魔王級敵人(深淵海妖／末日提督)，具備狂暴/召喚支援/專屬技能(魅惑光束單塔壓制、艦隊齊射範圍壓制)；選單關卡選擇改為10x4版面並標示系列與王級關卡。" },
+  { v:"0.4.0", note:"灘頭集結加入「架盾」：集結中傷害折減45%，另有30%機率完全閃避；DoT持續傷害不受影響。" },
+  { v:"0.3.0", note:"新增搶灘集結機制：海盜登陸後先集結，湊到2隻或等3.5秒後一起發動衝鋒(攻速+15%/移速+35%，持續4秒)；新增指揮官「掌旗官」單位，光環buff周圍友軍；全體敵人基礎血量+20%；每3波一次「猛攻波」。" },
+  { v:"0.2.0", note:"砲塔改為分支升級樹(加農砲後可選爆破/精準/控制，各分支可再升級一次，共6種終極塔)；索敵改為2D扇形範圍(距離+開角)取代原本同列限定；新增護甲/護盾/DoT/減速/凍結/連鎖/貫穿等機制；新增4種特殊敵人(弓箭海盜、鐵盾兵、潛水海盜、巫毒醫療船)。" },
+  { v:"0.1.0", note:"初版：單線5階砲塔合成、同列直線攻擊、5種基礎敵人、10關關卡與地形海域系統。" }
+];
+
+// ============ 音效與音樂系統 ============
+// 全部使用 Web Audio API 即時合成產生，不依賴外部音檔(離線單一HTML檔也能正常播放)。
+// AudioContext 必須在使用者手勢(點擊/觸控)後才能啟動，故於 onClick / muteBtn 首次觸發時解鎖。
+const AudioSys = (function(){
+  let ctx = null, masterGain = null, musicGain = null, sfxGain = null;
+  let muted = false;
+  let musicStarted = false, musicHandle = null, nextNoteTime = 0, beatIdx = 0;
+
+  try{
+    const saved = localStorage.getItem('ptmd_muted');
+    if(saved === '1') muted = true;
+  }catch(e){}
+
+  function ensureCtx(){
+    if(!ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return null;
+      ctx = new AC();
+      masterGain = ctx.createGain(); masterGain.gain.value = muted ? 0 : 1;
+      masterGain.connect(ctx.destination);
+      musicGain = ctx.createGain(); musicGain.gain.value = 0.25;
+      musicGain.connect(masterGain);
+      sfxGain = ctx.createGain(); sfxGain.gain.value = 0.55;
+      sfxGain.connect(masterGain);
+    }
+    if(ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  function setMuted(m){
+    muted = m;
+    if(masterGain) masterGain.gain.setTargetAtTime(muted?0:1, ctx.currentTime, 0.02);
+    try{ localStorage.setItem('ptmd_muted', muted?'1':'0'); }catch(e){}
+  }
+  function toggleMuted(){ ensureCtx(); setMuted(!muted); return muted; }
+  function isMuted(){ return muted; }
+
+  // ---- 短音效(合成音波，附上快速的音量包絡避免爆音) ----
+  function tone(freq, dur, type, vol, delay, slideTo){
+    const c = ensureCtx();
+    if(!c || muted) return;
+    const t0 = c.currentTime + (delay||0);
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = type||'sine';
+    osc.frequency.setValueAtTime(Math.max(20,freq), t0);
+    if(slideTo!==undefined) osc.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo), t0+dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002,vol), t0+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    osc.connect(g); g.connect(sfxGain);
+    osc.start(t0); osc.stop(t0+dur+0.03);
+  }
+  function noise(dur, vol, delay, filterFreq){
+    const c = ensureCtx();
+    if(!c || muted) return;
+    const t0 = c.currentTime + (delay||0);
+    const n = Math.max(1, Math.floor(c.sampleRate*dur));
+    const buf = c.createBuffer(1, n, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for(let i=0;i<n;i++) data[i] = (Math.random()*2-1) * (1 - i/n);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const filt = c.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value = filterFreq||1500;
+    const g = c.createGain();
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+    src.connect(filt); filt.connect(g); g.connect(sfxGain);
+    src.start(t0); src.stop(t0+dur+0.03);
+  }
+
+  const sfx = {
+    shoot(){ tone(560,0.08,'square',0.11,0,260); },
+    sniperShoot(){ tone(1500,0.12,'sawtooth',0.09,0,420); },
+    splashShoot(){ noise(0.1,0.18,0,900); tone(170,0.13,'sine',0.09); },
+    freezeShoot(){ tone(1700,0.12,'sine',0.09,0,2100); },
+    hitImpact(){ noise(0.06,0.09,0,2200); },
+    enemyDeath(){ tone(300,0.2,'sawtooth',0.14,0,55); },
+    shipSink(){ noise(0.35,0.22,0,450); tone(140,0.35,'sine',0.13,0,35); },
+    coinPickup(){ tone(988,0.07,'square',0.13); tone(1318,0.09,'square',0.13,0.05); },
+    towerPlace(){ tone(220,0.09,'square',0.16); noise(0.07,0.12,0,1500); },
+    towerUpgrade(){ [523,659,784,1046].forEach((f,i)=>tone(f,0.13,'triangle',0.14,i*0.06)); },
+    towerMaxed(){ tone(220,0.16,'sawtooth',0.12); },
+    uiClick(){ tone(440,0.05,'square',0.08); },
+    heroAbility(){ tone(660,0.18,'sine',0.16,0,1000); noise(0.18,0.1,0,2400); },
+    baseHit(){ noise(0.18,0.18,0,400); tone(110,0.18,'sine',0.15); },
+    waveStart(){ [392,494,587].forEach((f,i)=>tone(f,0.14,'triangle',0.12,i*0.09)); },
+    surgeWave(){ [220,220,220].forEach((f,i)=>tone(f,0.1,'sawtooth',0.17,i*0.12)); },
+    levelWin(){ [523,659,784,1046,1318].forEach((f,i)=>tone(f,0.18,'triangle',0.15,i*0.1)); },
+    gameOver(){ [392,349,294,220].forEach((f,i)=>tone(f,0.28,'sawtooth',0.14,i*0.16)); }
+  };
+
+  // ---- 背景音樂：輕快海盜風循環(貝斯+手風琴式撥奏)，以 lookahead 排程避免掉拍 ----
+  const BPM = 100;
+  const beatSec = 60/BPM;
+  const rootFreq = 110; // A2
+  const scale = [0,3,5,7,10,12,15,19]; // 小調五聲+變化音，營造海盜感
+  const bassSeq = [0,0,5,5,3,3,7,4];
+  function noteFreq(semi){ return rootFreq*Math.pow(2, semi/12); }
+  function scheduleMusicNote(freq, t0, dur, type, vol){
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    osc.connect(g); g.connect(musicGain);
+    osc.start(t0); osc.stop(t0+dur+0.05);
+  }
+  function musicStep(){
+    if(!ctx) return;
+    while(nextNoteTime < ctx.currentTime + 0.4){
+      const bassDeg = scale[bassSeq[beatIdx%bassSeq.length]%scale.length];
+      scheduleMusicNote(noteFreq(bassDeg-12), nextNoteTime, beatSec*0.85, 'triangle', 0.075);
+      if(beatIdx%2===1){
+        const mDeg = scale[(beatIdx*3+((beatIdx*7)%5))%scale.length];
+        scheduleMusicNote(noteFreq(mDeg+12), nextNoteTime+beatSec*0.5, beatSec*0.35, 'square', 0.035);
+      }
+      if(beatIdx%8===6){
+        scheduleMusicNote(noteFreq(scale[6]+12), nextNoteTime, beatSec*0.3, 'triangle', 0.05);
+      }
+      nextNoteTime += beatSec;
+      beatIdx++;
+    }
+  }
+  function startMusic(){
+    const c = ensureCtx();
+    if(!c || musicStarted) return;
+    musicStarted = true;
+    nextNoteTime = c.currentTime + 0.15;
+    beatIdx = 0;
+    musicStep();
+    musicHandle = setInterval(musicStep, 150);
+  }
+  function stopMusic(){
+    musicStarted = false;
+    if(musicHandle){ clearInterval(musicHandle); musicHandle=null; }
+  }
+
+  return { ensureCtx, setMuted, toggleMuted, isMuted, sfx, startMusic, stopMusic };
+})();
+
+// ============ 基本常數 ============
+const COLS = 13, ROWS = 6;
+const WALL_W = 92; // 城牆厚度(原46，加厚一倍)
+const GRID_X = WALL_W + 24; // 左側留給城牆+邊距，右側邊距獨立由 RIGHT_MARGIN 控制
+const RIGHT_MARGIN = 70; // 右側邊距(維持原本寬度，不受城牆加厚影響)
+let GRID_Y = 90, SHOP_BAR_H = 100;
+let CELL_W = 100, CELL_H = 88;
+let CANVAS_W = GRID_X + RIGHT_MARGIN + COLS*CELL_W;
+let CANVAS_H = GRID_Y + ROWS*CELL_H + SHOP_BAR_H;
+const ENGAGE_EPS = 2;
+let spriteScale = 1;
+const MAX_LEVEL = 40;
+
+// ============ 地圖系列(每10關一組主題) ============
+const MAP_SERIES = [
+  { name:'家鄉海域', sky:['#1b4f72','#2e6da4'], landA:'#8a5a34', landB:'#7a4d2b', seaA:'#1565c0', seaB:'#1976d2', boundary:'rgba(255,224,130,0.6)', wave:'rgba(255,255,255,0.18)' },
+  { name:'迷霧礁岩', sky:['#37474f','#607d8b'], landA:'#5c5c52', landB:'#4f4f47', seaA:'#37474f', seaB:'#455a64', boundary:'rgba(207,216,220,0.55)', wave:'rgba(255,255,255,0.14)' },
+  { name:'熔岩群島', sky:['#3e1a0f','#7a2e0e'], landA:'#4a2c1d', landB:'#3c2216', seaA:'#8d2b0b', seaB:'#a8380f', boundary:'rgba(255,171,64,0.6)', wave:'rgba(255,193,7,0.22)' },
+  { name:'幽靈海域', sky:['#120f24','#241f3d'], landA:'#2e2b3d', landB:'#262336', seaA:'#1a2a4a', seaB:'#22315c', boundary:'rgba(179,157,219,0.6)', wave:'rgba(179,157,219,0.2)' }
+];
+function seriesIndexForLevel(n){ return clamp(Math.ceil(n/10)-1, 0, MAP_SERIES.length-1); }
+function currentSeries(){ return MAP_SERIES[seriesIndexForLevel(G.level)]; }
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const wrapEl = document.getElementById('wrap');
+
+function resizeCanvas(){
+  const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  wrapEl.classList.toggle('fs-mode', isFS);
+  const hintEl = document.getElementById('hint');
+  if(hintEl) hintEl.style.display = isFS ? 'none' : '';
+  const fsBtnEl = document.getElementById('fsBtn');
+  if(fsBtnEl) fsBtnEl.style.display = isFS ? 'none' : '';
+
+  const availW = wrapEl.clientWidth || window.innerWidth;
+  const reserveH = isFS ? 0 : 46;
+  const availH = (wrapEl.clientHeight || window.innerHeight) - reserveH;
+
+  GRID_Y = clamp(Math.round(availH * 0.115), 44, 92);
+  SHOP_BAR_H = clamp(Math.round(availH * 0.19), 84, 132);
+  let cellH = Math.floor((availH - GRID_Y - SHOP_BAR_H) / ROWS);
+  if(cellH < 34){
+    GRID_Y = 44; SHOP_BAR_H = 84;
+    cellH = Math.floor((availH - GRID_Y - SHOP_BAR_H) / ROWS);
+  }
+  CELL_H = Math.max(30, cellH);
+  CELL_W = Math.max(40, Math.floor((availW - GRID_X - RIGHT_MARGIN) / COLS));
+  CANVAS_W = GRID_X + RIGHT_MARGIN + COLS*CELL_W;
+  CANVAS_H = GRID_Y + ROWS*CELL_H + SHOP_BAR_H;
+
+  canvas.width = CANVAS_W;
+  canvas.height = CANVAS_H;
+  canvas.style.width = CANVAS_W + 'px';
+  canvas.style.height = CANVAS_H + 'px';
+
+  spriteScale = clamp(CELL_H / 88, 0.55, 2.0);
+}
+
+function rand(a,b){ return a + Math.random()*(b-a); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
+
+// ============ 砲塔分支升級樹 ============
+// range: 水平可攻擊距離(Infinity代表全場)；angle: 扇形總開角(度數，以水平朝右為中心線)
+// branch: B=爆破 / P=精準 / C=控制／null=尚未分支的基礎塔
+// next: 可以合成成為的下一階key陣列。0=已是最高型態；1=直接升級；2+=彈出分支選擇
+const NODES = {
+  T0:   { name:"新兵砲",     emoji:"🔫", dmg:30,  cd:1.05, hp:70,  range:Infinity, angle:16, splash:0,   splashMult:0,   pspeed:520,  color:"#8d6e63", branch:null, next:["T1"] },
+  T1:   { name:"加農砲",     emoji:"💥", dmg:72,  cd:0.95, hp:120, range:Infinity, angle:16, splash:0,   splashMult:0,   pspeed:460,  color:"#6d4c41", branch:null, next:["B_T2","P_T2","C_T2"] },
+
+  B_T2: { name:"轟爆砲",     emoji:"💣", dmg:60,  cd:1.1,  hp:150, range:340,      angle:70, splash:70,  splashMult:0.4, pspeed:380,  color:"#e64a19", branch:"B", next:["B_T3A","B_T3B"] },
+  P_T2: { name:"狙擊砲",     emoji:"🎯", dmg:165, cd:1.25, hp:160, range:Infinity, angle:20, splash:0,   splashMult:0,   pspeed:1000, color:"#5d4037", branch:"P", next:["P_T3A","P_T3B"] },
+  C_T2: { name:"冰霜砲",     emoji:"❄️", dmg:45,  cd:1.3,  hp:140, range:420,      angle:60, splash:0,   splashMult:0,   pspeed:500,  color:"#0288d1", branch:"C", next:["C_T3A","C_T3B"], slowPct:0.4, slowDur:2 },
+
+  B_T3A:{ name:"範圍轟炸手", emoji:"🎆", dmg:95,  cd:1.2,  hp:190, range:380,      angle:90, splash:100, splashMult:0.4, pspeed:340,  color:"#d84315", branch:"B", next:["B_T4A"] },
+  B_T3B:{ name:"烈焰砲",     emoji:"🔥", dmg:70,  cd:1.1,  hp:190, range:340,      angle:70, splash:65,  splashMult:0.35,pspeed:380,  color:"#bf360c", branch:"B", next:["B_T4B"], dot:{dps:25,dur:3} },
+
+  P_T3A:{ name:"穿透彈道兵", emoji:"🔱", dmg:130, cd:1.15, hp:200, range:Infinity, angle:32, splash:0,   splashMult:0,   pspeed:900,  color:"#4e342e", branch:"P", next:["P_T4A"], pierce:true, pierceDecay:0.65 },
+  P_T3B:{ name:"破盾重砲",   emoji:"⚒️", dmg:240, cd:1.4,  hp:210, range:Infinity, angle:20, splash:0,   splashMult:0,   pspeed:800,  color:"#3e2723", branch:"P", next:["P_T4B"], shieldBonus:1.8 },
+
+  C_T3A:{ name:"減速光環砲", emoji:"🌀", dmg:0,   cd:1.4,  hp:180, range:400,      angle:80, splash:0,   splashMult:0,   pspeed:0,    color:"#0277bd", branch:"C", next:["C_T4A"], aura:{slowPct:0.3} },
+  C_T3B:{ name:"凍結砲",     emoji:"🧊", dmg:90,  cd:1.6,  hp:180, range:400,      angle:80, splash:0,   splashMult:0,   pspeed:550,  color:"#01579b", branch:"C", next:["C_T4B"], freezeDur:1.2 },
+
+  B_T4A:{ name:"天崩轟炸砲", emoji:"🌋", dmg:220, cd:1.3,  hp:380, range:420,      angle:100,splash:160, splashMult:0.5, pspeed:300,  color:"#bf360c", branch:"B", next:[] },
+  B_T4B:{ name:"煉獄烈焰砲", emoji:"👹", dmg:160, cd:1.2,  hp:380, range:380,      angle:90, splash:100, splashMult:0.35,pspeed:340,  color:"#870000", branch:"B", next:[], dot:{dps:50,dur:4} },
+
+  P_T4A:{ name:"貫日狙擊砲", emoji:"☄️", dmg:280, cd:1.2,  hp:400, range:Infinity, angle:44, splash:0,   splashMult:0,   pspeed:1200, color:"#212121", branch:"P", next:[], pierce:true, pierceDecay:0.9 },
+  P_T4B:{ name:"聖裁破盾砲", emoji:"⚡", dmg:480, cd:1.5,  hp:420, range:Infinity, angle:20, splash:0,   splashMult:0,   pspeed:900,  color:"#263238", branch:"P", next:[], shieldBonus:2.5 },
+
+  C_T4A:{ name:"極寒領域砲", emoji:"🥶", dmg:0,   cd:1.4,  hp:360, range:500,      angle:100,splash:0,   splashMult:0,   pspeed:0,    color:"#01416b", branch:"C", next:[], aura:{slowPct:0.55} },
+  C_T4B:{ name:"永凍鎖鏈砲", emoji:"🔗", dmg:150, cd:1.6,  hp:360, range:420,      angle:90, splash:0,   splashMult:0,   pspeed:650,  color:"#014377", branch:"C", next:[], freezeDur:2, chain:3 }
+};
+const TOWER_COST = 50;
+function tierOf(key){ const m = key.match(/T(\d)/); return m ? parseInt(m[1],10) : 0; }
+function branchColor(b){ return b==='B' ? '#d84315' : (b==='P' ? '#37474f' : (b==='C' ? '#01579b' : '#6d4c41')); }
+function briefStat(n){
+  if(n.aura) return '持續光環減速 '+Math.round(n.aura.slowPct*100)+'%';
+  if(n.pierce) return '貫穿全排／dmg '+n.dmg;
+  if(n.freezeDur) return '命中定身'+n.freezeDur+'s／dmg '+n.dmg;
+  if(n.dot) return '灼燒DoT／dmg '+n.dmg;
+  if(n.shieldBonus) return '破盾x'+n.shieldBonus+'／dmg '+n.dmg;
+  return 'dmg '+n.dmg+' ／ 冷卻 '+n.cd+'s';
+}
+
+// ============ 敵人資料 ============
+const ENEMY_HP_BUFF = 4.0; // 全體基礎血量加成(原+20%，改為+300%，即血量再加三倍)
+const SHIP_HP_BUFF = 3.0;  // 船體血量加成(原本容易被打沉，改為加厚三倍)
+const TROOPS_PER_SHIP_DEFAULT = 1; // 沒特別標註 troopsPerShip 的兵種，維持一船一人(指揮官/BOSS/支援船等)
+const ENEMY_TYPES = {
+  basic: { name:"小嘍囉",     hp:45,  speed:23, dmg:9,  gold:8,   shipMult:1.3, drownChance:0.30, troopsPerShip:5 },
+  fast:  { name:"快艇海盜",   hp:32,  speed:44, dmg:6,  gold:10,  shipMult:1.05,drownChance:0.15, troopsPerShip:5 },
+  sword: { name:"劍士海盜",   hp:82,  speed:20, dmg:15, gold:14,  shipMult:1.35,drownChance:0.30, troopsPerShip:5 },
+  heavy: { name:"重甲海盜",   hp:220, speed:14, dmg:22, gold:26,  shipMult:1.8, drownChance:0.55, armor:0.25, troopsPerShip:5 },
+  archer:{ name:"弓箭海盜",   hp:55,  speed:18, dmg:10, gold:16,  shipMult:1.3, drownChance:0.25, ranged:true, atkInterval:1.2, atkRangeMult:2, troopsPerShip:5 },
+  shield:{ name:"鐵盾兵",     hp:65,  speed:16, dmg:14, gold:18,  shipMult:1.4, drownChance:0.35, shieldMax:55, ranged:true, atkInterval:1.8, atkRangeMult:1.1, troopsPerShip:5 },
+  diver: { name:"潛水海盜",   hp:55,  speed:26, landSpeed:18, dmg:10, gold:15, shipMult:1.2, drownChance:0.1, submergeImmune:true },
+  medic: { name:"巫毒醫療船", hp:50,  speed:12, dmg:0,  gold:20,  shipMult:1.0, drownChance:0, noLand:true, healPct:0.03, healRadius:170 },
+  flag:  { name:"掌旗官",     hp:75,  speed:17, dmg:8,  gold:22,  shipMult:1.4, drownChance:0.3, auraBuff:{ speedMult:1.2, dmgMult:1.25, radius:210 } },
+  boss:  { name:"海盜船長",   hp:780,  speed:11, dmg:42, gold:130, shipMult:2.2, drownChance:0.15, armor:0.2,
+           rageThresholds:[0.5], summonThresholds:[0.7,0.4], summonTypes:['basic'] },
+  megaboss20: { name:"深淵海妖", hp:1600, speed:10, dmg:55, gold:320, shipMult:2.4, drownChance:0.1, armor:0.15,
+           rageThresholds:[0.55], summonThresholds:[0.75,0.5,0.25], summonTypes:['shield','archer'],
+           abilityInterval:6, abilityDisableDuration:3, abilityScope:'single' },
+  megaboss40: { name:"末日提督", hp:3200, speed:9,  dmg:75, gold:650, shipMult:2.6, drownChance:0.05, armor:0.25,
+           rageThresholds:[0.7,0.4], summonThresholds:[0.8,0.6,0.4,0.2], summonTypes:['heavy','flag'],
+           abilityInterval:8, abilityDisableDuration:2.5, abilityScope:'wide' }
+};
+
+// ============ 灘頭集結 / 衝鋒 常數 ============
+const RALLY_RADIUS = 130;   // 判定「附近」集結中同伴的距離
+const RALLY_CRITICAL_MASS = 4; // 陣地聚集到這麼多人，即使動線未淨空也會直接衝(人數優勢壓上)
+const RALLY_MAX_WAIT = 8;   // 陣地固守的保底等待上限，避免動線一直沒淨空就永遠不衝(原3.5，改長讓對轟更持久)
+const LANE_SCAN_INTERVAL = 0.6; // 陣地每隔多久重新評估一次「動線是否安全」
+const CHARGE_DURATION = 4;  // 衝鋒buff持續時間
+const CHARGE_SPEED_MULT = 1.35;
+const ENEMY_SPEED_MULT = 0.7; // 全體海盜移動速度倍率(<1變慢／>1變快)，調這一個數字即可全域微調節奏
+const CHARGE_DMG_MULT = 1.15;
+const RALLY_DODGE_CHANCE = 0.3;   // 集結中(架盾)有機率完全閃避攻擊
+const RALLY_DEFENSE_MULT = Math.min(0.95, 0.45*5); // 集結中(架盾)沒閃避時，傷害折減比例(原45%，改為5倍強度=225%，但折減比例上限為95%避免變成無敵)
+
+// ============ 主角(城牆英雄)系統 ============
+// 擊殺門檻：index=hero.level-1，達到該累積擊殺數即升到 level+1
+const KILL_THRESHOLDS = [40,100,180,280,400,550,720,920,1150,1450,1800,2200,2650,3150,3700,4300,4950,5650,6400];
+const HERO_TREE = {
+  recruit:      { name:'新兵隊長', emoji:'🧑\u200d✈️', color:'#78909c' },
+  warrior:      { name:'戰士',   emoji:'⚔️', color:'#8d4a3a', next:['paladin','berserker'] },
+  ranger:       { name:'弓手',   emoji:'🏹', color:'#4e7a3a', next:['scout','sniper'] },
+  mage:         { name:'法師',   emoji:'🔮', color:'#5a3a8d', next:['elementalist','warlock'] },
+  paladin:      { name:'聖騎士', emoji:'🛡️', color:'#e0c25a', family:'warrior' },
+  berserker:    { name:'狂戰士', emoji:'🪓', color:'#b71c1c', family:'warrior' },
+  scout:        { name:'遊俠',   emoji:'🌲', color:'#2e7d32', family:'ranger' },
+  sniper:       { name:'狙擊手', emoji:'🎯', color:'#33474f', family:'ranger' },
+  elementalist: { name:'元素使', emoji:'🔥', color:'#d84315', family:'mage' },
+  warlock:      { name:'咒術師', emoji:'🌀', color:'#4527a0', family:'mage' }
+};
+// 各家族基礎自動攻擊風格(選定主職業/子職業前用recruit通用型態)
+const HERO_FAMILY_STATS = {
+  recruit: { dmg:22, cd:1.0, range:260, splash:0 },
+  warrior: { dmg:26, cd:0.9, range:170, splash:70 },
+  ranger:  { dmg:46, cd:1.1, range:420, splash:0 },
+  mage:    { dmg:22, cd:1.0, range:300, splash:90 }
+};
+// 各主職業(Lv5轉職)與最終職業(Lv10覺醒)皆各有2個主動技能：costs=金幣升1/2/3級花費，cds/mags=各等級冷卻與效果數值
+// 覺醒最終職業後，技能會替換成更強的最終職業版本，但已投入的等級(abilityLevel)會延續，不需重新練起。
+const ABILITIES = {
+  warrior: {
+    a: { name:'突擊斬', emoji:'⚔️', costs:[70,130,220], cds:[9,7,5], mags:[{dmg:150},{dmg:220},{dmg:320}] },
+    b: { name:'防禦姿態', emoji:'🛡️', costs:[80,150,250], cds:[18,15,12], mags:[{shieldPct:0.25,dur:4},{shieldPct:0.35,dur:5},{shieldPct:0.45,dur:6}] }
+  },
+  ranger: {
+    a: { name:'穿心箭', emoji:'🏹', costs:[70,130,220], cds:[8,6,5], mags:[{dmg:170},{dmg:250},{dmg:360}] },
+    b: { name:'絆索陷阱', emoji:'🪢', costs:[80,150,250], cds:[14,11,9], mags:[{freeze:1.5},{freeze:2},{freeze:2.5}] }
+  },
+  mage: {
+    a: { name:'烈焰彈', emoji:'🔥', costs:[70,130,220], cds:[10,8,6], mags:[{radius:200,dmg:130},{radius:220,dmg:190},{radius:240,dmg:270}] },
+    b: { name:'寒冰迷霧', emoji:'🌫️', costs:[80,150,250], cds:[16,13,10], mags:[{radius:220,slowPct:0.35,dur:3},{radius:240,slowPct:0.45,dur:3.5},{radius:260,slowPct:0.55,dur:4}] }
+  },
+  paladin: {
+    a: { name:'聖光壁壘', emoji:'✨', costs:[80,150,260], cds:[14,12,10], mags:[{stunDur:1.5,shieldPct:0.3},{stunDur:2,shieldPct:0.4},{stunDur:2.5,shieldPct:0.5}] },
+    b: { name:'神聖庇護', emoji:'🕊️', costs:[100,180,300], cds:[26,22,18], mags:[{invulnDur:3,heal:15},{invulnDur:4,heal:25},{invulnDur:5,heal:40}] }
+  },
+  berserker: {
+    a: { name:'血怒橫掃', emoji:'🪓', costs:[80,150,260], cds:[10,8,6], mags:[{dmg:220},{dmg:320},{dmg:460}] },
+    b: { name:'嗜血狂暴', emoji:'💢', costs:[100,180,300], cds:[20,16,12], mags:[{dur:5,mult:2.0},{dur:6,mult:2.5},{dur:8,mult:3.0}] }
+  },
+  scout: {
+    a: { name:'束縛射擊', emoji:'🪤', costs:[70,140,240], cds:[9,7,5], mags:[{freeze:2,dmg:60,bonus:1.5},{freeze:2.5,dmg:90,bonus:1.8},{freeze:3,dmg:130,bonus:2.2}] },
+    b: { name:'陷阱佈置', emoji:'🕸️', costs:[90,160,270], cds:[16,13,10], mags:[{freeze:2},{freeze:2.5},{freeze:3}] }
+  },
+  sniper: {
+    a: { name:'破甲狙擊', emoji:'🎯', costs:[80,150,260], cds:[8,6,5], mags:[{dmg:260},{dmg:380},{dmg:540}] },
+    b: { name:'處決', emoji:'💀', costs:[100,180,300], cds:[18,14,11], mags:[{pct:0.25,trueDmg:300},{pct:0.32,trueDmg:450},{pct:0.4,trueDmg:650}] }
+  },
+  elementalist: {
+    a: { name:'隕石術', emoji:'☄️', costs:[80,150,260], cds:[12,9,7], mags:[{radius:240,dmg:200},{radius:240,dmg:300},{radius:240,dmg:430}] },
+    b: { name:'烈焰印記', emoji:'🔥', costs:[90,160,270], cds:[15,12,9], mags:[{radius:260,dps:30,dur:4},{radius:260,dps:45,dur:5},{radius:260,dps:65,dur:6}] }
+  },
+  warlock: {
+    a: { name:'凍結新星', emoji:'❄️', costs:[110,190,320], cds:[20,16,13], mags:[{freeze:2},{freeze:2.5},{freeze:3}] },
+    b: { name:'詛咒印記', emoji:'🌀', costs:[100,180,300], cds:[18,14,11], mags:[{dur:5,dmgMult:0.6,armorRed:0.15},{dur:6,dmgMult:0.5,armorRed:0.25},{dur:8,dmgMult:0.4,armorRed:0.35}] }
+  }
+};
+
+// ============ 關卡波次產生 ============
+function weightedPick(pool, n){
+  const w = { basic:5, fast:3, sword:3, heavy:1+Math.floor(n/3), archer:2+Math.floor(n/4), shield:2+Math.floor(n/5), diver:1+Math.floor(n/6), medic:1, flag:1+Math.floor(n/5) };
+  let total=0; const items=[];
+  pool.forEach(t=>{ const wt=w[t]||1; total+=wt; items.push([t,wt]); });
+  let r = Math.random()*total;
+  for(const [t,wt] of items){ if(r<wt) return t; r-=wt; }
+  return pool[0];
+}
+function pickRowFor(type, terrain){
+  if(type==='diver' || type==='medic'){
+    const seaRows=[];
+    for(let r=0;r<ROWS;r++) if(terrain[r]>0) seaRows.push(r);
+    if(seaRows.length) return seaRows[Math.floor(Math.random()*seaRows.length)];
+  }
+  return Math.floor(Math.random()*ROWS);
+}
+
+// ============ 地形產生 ============
+function generateTerrain(level){
+  const maxSea = clamp(2 + Math.floor((level-1)/2), 2, 5);
+  const arr = [];
+  for(let r=0;r<ROWS;r++){
+    let sea = (Math.random() < 0.12) ? 0 : Math.floor(rand(1, maxSea+1));
+    sea = clamp(sea, 0, COLS-4);
+    arr.push(sea);
+  }
+  return arr;
+}
+function seaWidthOf(row){ return (G.terrain && G.terrain[row]) || 0; }
+function landStartCol(row){ return COLS - seaWidthOf(row); }
+function isSeaCell(row,col){ return col >= landStartCol(row); }
+function seaBoundaryX(row){ return GRID_X + landStartCol(row)*CELL_W; }
+// 陣地觀察：判斷這一列的動線是否安全(同列沒有我方砲塔可以阻擊)
+function laneClear(row){ return !G.towers.some(t=>t.row===row); }
+
+function buildLevel(n, terrain){
+  const levelMult = 1 + (n-1)*0.16;
+  const pools = {
+    1:['basic'],
+    2:['basic','fast'],
+    3:['basic','fast','sword','archer'],
+    4:['basic','fast','sword','heavy','archer'],
+    5:['basic','fast','sword','heavy','archer','shield','flag'],
+    6:['basic','fast','sword','heavy','archer','shield','flag']
+  };
+  let pool = pools[Math.min(n,6)] || ['basic','fast','sword','heavy','archer','shield','flag','diver','medic'];
+  if(n>=7 && pool.indexOf('diver')===-1) pool = pool.concat(['diver','medic']);
+  const waveCount = 3 + Math.ceil(n/2);
+  const waves = [];
+  for(let w=0; w<waveCount; w++){
+    const isSurge = w>0 && (w+1)%3===0; // 每3波一次猛攻波：數量短時間內爆量湧入
+    const enemyCount = 4 + n + w + (isSurge ? Math.ceil(3+n/2) : 0);
+    const events = [];
+    let medicUsed = false;
+    for(let i=0;i<enemyCount;i++){
+      let type = weightedPick(pool, n);
+      if(type==='medic'){
+        if(medicUsed) type='basic'; else medicUsed = true;
+      }
+      const row = pickRowFor(type, terrain);
+      let delay;
+      if(i===0) delay = 0.6;
+      else if(isSurge) delay = Math.max(0.18, rand(0.28,0.5) - Math.min(n*0.015,0.2));
+      else delay = Math.max(0.35, rand(0.75,1.35) - Math.min(n*0.02,0.3));
+      events.push({ delay, type, row });
+    }
+    waves.push({ events, levelMult, isSurge });
+  }
+  if(n % 5 === 0){
+    const isMega40 = (n===40), isMega20 = (n===20 && !isMega40);
+    const bossType = isMega40 ? 'megaboss40' : (isMega20 ? 'megaboss20' : 'boss');
+    const events = [{ delay:1.2, type:bossType, row:2 }];
+    for(let i=0;i<4;i++) events.push({ delay: rand(0.9,1.6), type:'sword', row: Math.floor(Math.random()*ROWS) });
+    if(n===10) events.push({ delay:1.8, type:'boss', row: 4 });
+    if(n===40) events.push({ delay:2.2, type:'boss', row: 4 });
+    waves.push({ events, levelMult: levelMult*1.08 });
+  }
+  return waves;
+}
+
+// ============ 遊戲狀態 ============
+const G = {
+  screen: 'menu',
+  showChangelog: false,
+  showHeroShop: false,
+  unlocked: (function(){ const a = new Array(MAX_LEVEL+1).fill(false); a[1]=true; a[2]=true; return a; })(),
+  level: 1,
+  gold: 0,
+  baseHP: 100, baseMaxHP: 100,
+  towers: [], enemies: [], projectiles: [], coins: [], floats: [], heroFlashes: [],
+  terrain: [],
+  waves: [], waveIdx: -1, prepTimer: 3,
+  currentEvents: [], spawnIdx: 0, spawnCountdown: 0, spawning: false,
+  betweenTimer: undefined,
+  currentLevelMult: 1, currentIsSurge: false,
+  placing: false, selected: null,
+  pendingMerge: null,
+  pendingHeroClass: null,
+  wallShieldPct: 0, wallShieldTimer: 0, wallInvulnTimer: 0,
+  hero: {
+    kills: 0, level: 1, baseClass: null, finalClass: null,
+    atkCd: 0, rageTimer: 0, rageMult: 1, rageIgnoreArmor: false,
+    abilityLevel: { a:0, b:0 }, abilityCd: { a:0, b:0 }
+  },
+  paused: false, speedMul: 1,
+  hover: {x:-1,y:-1},
+  gameOver: false, levelComplete: false,
+  coinTimer: rand(4,7)
+};
+
+// ============ 座標輔助 ============
+function cellCenter(row,col){ return { x: GRID_X + col*CELL_W + CELL_W/2, y: GRID_Y + row*CELL_H + CELL_H/2 }; }
+function cellFromPoint(x,y){
+  if(x<GRID_X || x>GRID_X+COLS*CELL_W || y<GRID_Y || y>GRID_Y+ROWS*CELL_H) return null;
+  return { row: Math.floor((y-GRID_Y)/CELL_H), col: Math.floor((x-GRID_X)/CELL_W) };
+}
+function getTowerAt(row,col){ return G.towers.find(t=>t.row===row && t.col===col) || null; }
+function removeTower(t){ const i=G.towers.indexOf(t); if(i>=0) G.towers.splice(i,1); }
+
+function spawnFloat(x,y,text,color){
+  G.floats.push({ x, y, text, color: color||'#ffffff', life: 1.1, vy: -32 });
+}
+let hudRects = { pause:{x:0,y:0,w:0,h:0}, menu:{x:0,y:0,w:0,h:0}, speed:{x:0,y:0,w:0,h:0} };
+
+// ============ 關卡流程 ============
+function startLevel(n){
+  G.level = n;
+  G.gold = 130 + (n-1)*12;
+  G.baseHP = 100; G.baseMaxHP = 100;
+  G.towers = []; G.enemies = []; G.projectiles = []; G.coins = []; G.floats = []; G.heroFlashes = [];
+  G.terrain = generateTerrain(n);
+  G.waves = buildLevel(n, G.terrain);
+  G.waveIdx = -1; G.prepTimer = 3;
+  G.spawning = false; G.betweenTimer = undefined;
+  G.placing = false; G.selected = null; G.pendingMerge = null; G.pendingHeroClass = null;
+  G.wallShieldPct = 0; G.wallShieldTimer = 0; G.wallInvulnTimer = 0;
+  G.hero.atkCd = 0; G.hero.rageTimer = 0; G.hero.rageMult = 1; G.hero.rageIgnoreArmor = false;
+  G.hero.abilityCd.a = 0; G.hero.abilityCd.b = 0;
+  G.paused = false; G.speedMul = 1;
+  G.gameOver = false; G.levelComplete = false;
+  G.coinTimer = rand(4,7);
+  G.screen = 'playing';
+}
+function startNextWave(){
+  G.waveIdx++;
+  const wave = G.waves[G.waveIdx];
+  G.currentEvents = wave.events;
+  G.currentLevelMult = wave.levelMult;
+  G.currentIsSurge = !!wave.isSurge;
+  G.spawnIdx = 0;
+  G.spawnCountdown = wave.events.length ? wave.events[0].delay : 0;
+  G.spawning = true;
+  if(G.currentIsSurge){
+    spawnFloat(CANVAS_W/2, GRID_Y + ROWS*CELL_H/2, '⚠️ 猛攻波來襲！', '#ff5252');
+    AudioSys.sfx.surgeWave();
+  } else {
+    AudioSys.sfx.waveStart();
+  }
+}
+function finishLevelWin(){
+  G.levelComplete = true;
+  if(G.level < MAX_LEVEL) G.unlocked[G.level+1] = true;
+  AudioSys.sfx.levelWin();
+}
+
+// ============ 產生敵人 ============
+// 共用的敵人物件建構(船上與已上岸的散兵共用同一份基礎欄位)
+function makeEnemyBase(type, row, levelMult, x){
+  const cfg = ENEMY_TYPES[type];
+  const hp = Math.round(cfg.hp*levelMult*ENEMY_HP_BUFF);
+  const shieldMax = cfg.shieldMax ? Math.round(cfg.shieldMax*levelMult*0.6) : 0;
+  return {
+    type, row, x,
+    hp, maxHp: hp,
+    levelMult,
+    drownChance: cfg.drownChance!==undefined ? cfg.drownChance : 0.3,
+    speed: cfg.speed*ENEMY_SPEED_MULT, landSpeed: (cfg.landSpeed || cfg.speed)*ENEMY_SPEED_MULT,
+    dmg: Math.round(cfg.dmg*levelMult*10)/10,
+    gold: Math.round(cfg.gold * (1 + (G.level-1)*0.06)),
+    name: cfg.name,
+    state: 'walking', attackingTower: null,
+    armor: cfg.armor || 0,
+    shield: shieldMax, shieldMax: shieldMax,
+    ranged: !!cfg.ranged, atkCd: 0, atkInterval: cfg.atkInterval || 1.2, atkRange: (cfg.atkRangeMult||2)*CELL_W,
+    noLand: !!cfg.noLand, healPct: cfg.healPct||0, healRadius: cfg.healRadius||0,
+    submergeImmune: !!cfg.submergeImmune,
+    auraSlowFactor: 1, tempSlowFactor: 1, tempSlowTimer: 0, frozenTimer: 0, dot: null,
+    raged: false, summoned70: false, summoned40: false,
+    rallyTimer: 0, laneScanCd: 0, chargeActive: false, chargeTimer: 0,
+    cmdSpeedMul: 1, cmdDmgMul: 1,
+    auraBuff: cfg.auraBuff || null,
+    isBossTier: !!(cfg.rageThresholds || cfg.summonThresholds),
+    rageThresholds: cfg.rageThresholds || [], rageDone: (cfg.rageThresholds||[]).map(()=>false),
+    summonThresholds: cfg.summonThresholds || [], summonDone: (cfg.summonThresholds||[]).map(()=>false),
+    summonTypes: cfg.summonTypes || ['basic'],
+    abilityInterval: cfg.abilityInterval || 0, abilityCd: cfg.abilityInterval || 0,
+    abilityDisableDuration: cfg.abilityDisableDuration || 0, abilityScope: cfg.abilityScope || 'single',
+    curseTimer: 0, curseDmgMult: 1, curseArmorRed: 0
+  };
+}
+
+// 從海上生成一艘船：一船可能載多名兵力(troopsPerShip)，船體血量加成三倍(SHIP_HP_BUFF)，
+// 抵達灘頭時會依「船隻剩餘血量比例」決定實際能成功搶灘上岸的人數
+function spawnEnemy(type, row, levelMult){
+  const cfg = ENEMY_TYPES[type];
+  const onShip = seaWidthOf(row) > 0;
+  const e = makeEnemyBase(type, row, levelMult, GRID_X + COLS*CELL_W + 46);
+  e.onShip = onShip;
+  if(onShip){
+    const shipHp = Math.round(e.hp * (cfg.shipMult||1.3) * SHIP_HP_BUFF);
+    e.shipHp = shipHp;
+    e.shipMaxHp = shipHp;
+    e.troopsPerShip = cfg.troopsPerShip || TROOPS_PER_SHIP_DEFAULT;
+    if(e.troopsPerShip > 1) e.name = cfg.name + '運兵船';
+  } else {
+    // 這一列沒有海域可搭船，直接以單一兵力出現在陸地上(不套用搶灘/船隻機制)
+    e.shipHp = e.hp; e.shipMaxHp = e.hp; e.troopsPerShip = 1;
+  }
+  G.enemies.push(e);
+}
+
+// 船隻成功靠岸後，依存活比例散兵上岸；每個散兵都是獨立單位，會各自進入「架盾建立陣地」狀態
+function spawnLandedTroop(type, row, levelMult, x){
+  const e = makeEnemyBase(type, row, levelMult, x);
+  e.onShip = false;
+  e.shipHp = e.hp; e.shipMaxHp = e.hp; e.troopsPerShip = 1;
+  e.state = 'rallying';
+  e.rallyTimer = 0;
+  e.laneScanCd = 0;
+  G.enemies.push(e);
+}
+
+// ============ 傷害計算(護甲/護盾/潛水免疫) ============
+function applyDamage(e, rawDmg, opts){
+  opts = opts || {};
+  if(e.onShip && e.submergeImmune && !opts.canHitSubmerged) return; // 潛水中，一般攻擊無效
+  let dmg = rawDmg;
+  if(e.state === 'rallying' && !opts.skipRallyDefense){
+    if(Math.random() < RALLY_DODGE_CHANCE){
+      spawnFloat(e.x, GRID_Y + e.row*CELL_H - 14, '閃避！', '#b3e5fc');
+      return;
+    }
+    dmg *= (1 - RALLY_DEFENSE_MULT);
+  }
+  const effArmor = Math.max(0, (e.armor||0) - (e.curseTimer>0 ? (e.curseArmorRed||0) : 0));
+  if(effArmor && !opts.ignoreArmor) dmg *= (1 - effArmor);
+  if(e.onShip){ e.shipHp -= dmg; return; }
+  if(e.shield > 0){
+    const mult = opts.bypassDeflect ? (opts.shieldMult||1) : 0.3;
+    const dealt = dmg*mult;
+    e.shield -= dealt;
+    if(e.shield < 0){ e.hp += e.shield; e.shield = 0; }
+  } else {
+    e.hp -= dmg;
+  }
+}
+
+// ============ 更新邏輯：波次 ============
+function updateWaves(dt){
+  if(G.levelComplete || G.gameOver) return;
+  if(G.waveIdx === -1){
+    G.prepTimer -= dt;
+    if(G.prepTimer <= 0) startNextWave();
+    return;
+  }
+  if(G.spawning){
+    if(G.spawnIdx < G.currentEvents.length){
+      G.spawnCountdown -= dt;
+      if(G.spawnCountdown <= 0){
+        const ev = G.currentEvents[G.spawnIdx];
+        spawnEnemy(ev.type, ev.row, G.currentLevelMult);
+        G.spawnIdx++;
+        if(G.spawnIdx < G.currentEvents.length) G.spawnCountdown = G.currentEvents[G.spawnIdx].delay;
+      }
+    } else {
+      G.spawning = false;
+    }
+    return;
+  }
+  if(G.enemies.length === 0){
+    if(G.waveIdx+1 < G.waves.length){
+      if(G.betweenTimer === undefined) G.betweenTimer = 5.5;
+      G.betweenTimer -= dt;
+      if(G.betweenTimer <= 0){ G.betweenTimer = undefined; startNextWave(); }
+    } else {
+      finishLevelWin();
+    }
+  }
+}
+
+// ============ 索敵(扇形範圍) ============
+function findCandidates(t, cfg){
+  const c = cellCenter(t.row,t.col);
+  const halfAngle = (cfg.angle/2) * Math.PI/180;
+  const list = [];
+  for(const e of G.enemies){
+    const dx = e.x - c.x, dy = (e.row - t.row) * CELL_H;
+    if(dx < -24) continue;
+    const dist = Math.hypot(dx,dy);
+    if(dist > cfg.range) continue;
+    const ang = Math.atan2(Math.abs(dy), Math.max(dx, 0.0001));
+    if(ang > halfAngle) continue;
+    list.push({ e, dist });
+  }
+  list.sort((a,b)=>a.dist-b.dist);
+  const medicIdx = list.findIndex(o=>o.e.type==='medic');
+  if(medicIdx > 0){ const [m] = list.splice(medicIdx,1); list.unshift(m); }
+  return list.map(o=>o.e);
+}
+
+function fireTower(t, cfg, candidates){
+  const c = cellCenter(t.row,t.col);
+  if(cfg.pierce){
+    let mult = 1;
+    const hits = [];
+    for(const e of candidates){
+      applyDamage(e, cfg.dmg*mult, { canHitSubmerged:false });
+      hits.push({ x:e.x, row:e.row });
+      mult *= cfg.pierceDecay;
+    }
+    G.projectiles.push({ beam:true, life:0.16, fromX:c.x, fromY:c.y, hits, color: branchColor(cfg.branch) });
+    t.cooldown = cfg.cd;
+    AudioSys.sfx.sniperShoot();
+    return;
+  }
+  const target = candidates[0];
+  const dx = target.x - c.x, dy = (target.row - t.row) * CELL_H;
+  G.projectiles.push({ x:c.x, y:c.y, targetRef:target, nodeKey:t.key, speed: cfg.pspeed||560, angle: Math.atan2(dy,dx), branch: cfg.branch });
+  t.cooldown = cfg.cd;
+  if(cfg.splash>0) AudioSys.sfx.splashShoot();
+  else if(cfg.branch==='C') AudioSys.sfx.freezeShoot();
+  else if(!cfg.range || cfg.range===Infinity ? (cfg.pspeed||560)>=900 : false) AudioSys.sfx.sniperShoot();
+  else AudioSys.sfx.shoot();
+}
+
+function updateTowers(dt){
+  for(const e of G.enemies) e.auraSlowFactor = 1;
+  for(const t of G.towers){
+    if(t.disabledTimer > 0){ t.disabledTimer = Math.max(0, t.disabledTimer-dt); continue; }
+    const cfg = NODES[t.key];
+    if(cfg.aura){
+      const c = cellCenter(t.row,t.col);
+      const halfAngle = (cfg.angle/2)*Math.PI/180;
+      for(const e of G.enemies){
+        const dx = e.x - c.x, dy = (e.row - t.row)*CELL_H;
+        if(dx < -24) continue;
+        const dist = Math.hypot(dx,dy);
+        if(dist > cfg.range) continue;
+        const ang = Math.atan2(Math.abs(dy), Math.max(dx,0.0001));
+        if(ang > halfAngle) continue;
+        e.auraSlowFactor = Math.min(e.auraSlowFactor, 1-cfg.aura.slowPct);
+      }
+      continue;
+    }
+    t.cooldown -= dt;
+    if(t.cooldown <= 0){
+      const candidates = findCandidates(t, cfg);
+      if(candidates.length) fireTower(t, cfg, candidates);
+    }
+  }
+}
+
+function onProjectileImpact(p){
+  const target = p.targetRef;
+  if(!G.enemies.includes(target)) return;
+  const cfg = NODES[p.nodeKey];
+  const opts = {};
+  if(cfg.shieldBonus){ opts.bypassDeflect = true; opts.shieldMult = cfg.shieldBonus; }
+  opts.canHitSubmerged = (cfg.splash>0) || cfg.branch==='C';
+  applyDamage(target, cfg.dmg, opts);
+  AudioSys.sfx.hitImpact();
+  if(cfg.slowPct){
+    target.tempSlowFactor = Math.min(target.tempSlowFactor, 1-cfg.slowPct);
+    target.tempSlowTimer = Math.max(target.tempSlowTimer, cfg.slowDur||1.5);
+  }
+  if(cfg.dot) target.dot = { dps:cfg.dot.dps, remaining:cfg.dot.dur };
+  if(cfg.freezeDur) target.frozenTimer = Math.max(target.frozenTimer, cfg.freezeDur);
+  if(cfg.chain){
+    let count=0;
+    for(const e2 of G.enemies){
+      if(count>=cfg.chain) break;
+      if(e2===target) continue;
+      const dx=e2.x-target.x, dy=(e2.row-target.row)*CELL_H;
+      if(Math.hypot(dx,dy) <= 90){ e2.frozenTimer = Math.max(e2.frozenTimer, cfg.freezeDur*0.6); count++; }
+    }
+  }
+  if(cfg.splash > 0){
+    for(const e2 of G.enemies){
+      if(e2===target) continue;
+      const dx=e2.x-target.x, dy=(e2.row-target.row)*CELL_H;
+      if(Math.hypot(dx,dy) <= cfg.splash){
+        applyDamage(e2, cfg.dmg*cfg.splashMult, { canHitSubmerged:true });
+        if(cfg.dot) e2.dot = { dps:cfg.dot.dps*0.7, remaining:cfg.dot.dur };
+      }
+    }
+  }
+}
+
+function updateProjectiles(dt){
+  for(let i=G.projectiles.length-1;i>=0;i--){
+    const p = G.projectiles[i];
+    if(p.beam){ p.life -= dt; if(p.life<=0) G.projectiles.splice(i,1); continue; }
+    if(!G.enemies.includes(p.targetRef)){ G.projectiles.splice(i,1); continue; }
+    const ty = GRID_Y + p.targetRef.row*CELL_H + CELL_H/2;
+    const dx = p.targetRef.x - p.x, dy = ty - p.y;
+    const dist = Math.hypot(dx,dy);
+    const step = p.speed*dt;
+    if(dist <= step){
+      onProjectileImpact(p);
+      G.projectiles.splice(i,1);
+    } else {
+      p.angle = Math.atan2(dy,dx);
+      p.x += dx/dist*step;
+      p.y += dy/dist*step;
+    }
+  }
+}
+
+function resolveShipSunk(e, i){
+  const totalTroops = e.troopsPerShip || 1;
+  const sinkGold = Math.max(1, Math.round(e.gold * totalTroops * 0.4));
+  G.gold += sinkGold;
+  spawnFloat(e.x, GRID_Y + e.row*CELL_H + 20, '+'+sinkGold+' 擊沉！', '#80d8ff');
+  AudioSys.sfx.shipSink();
+
+  let survivors = 0;
+  for(let k=0;k<totalTroops;k++){ if(Math.random() >= e.drownChance) survivors++; }
+  const drowned = totalTroops - survivors;
+
+  G.enemies.splice(i,1);
+  for(let k=0;k<drowned;k++) registerKill();
+
+  if(survivors <= 0){
+    spawnFloat(e.x, GRID_Y + e.row*CELL_H - 12, totalTroops>1 ? '船員全數溺水身亡！' : '海盜溺水身亡！', '#4fc3f7');
+    return;
+  }
+  spawnFloat(e.x, GRID_Y + e.row*CELL_H - 12, totalTroops>1 ? `${survivors}/${totalTroops} 泅水上岸！` : '泅水上岸！', '#fff59d');
+  for(let k=0;k<survivors;k++){
+    const t = makeEnemyBase(e.type, e.row, e.levelMult, e.x - k*18);
+    t.onShip = false;
+    t.shipHp = t.hp; t.shipMaxHp = t.hp; t.troopsPerShip = 1;
+    t.state = 'walking'; // 船已經沉了，剩下的人得自己游/走上岸，沒有陣地可躲
+    G.enemies.push(t);
+  }
+}
+
+// 衝鋒buff / 指揮官buff / 詛咒印記 加成後的實際傷害
+function effectiveDmg(e){
+  return e.dmg * (e.chargeActive ? CHARGE_DMG_MULT : 1) * (e.cmdDmgMul || 1) * (e.curseTimer>0 ? (e.curseDmgMult||1) : 1);
+}
+
+// 指揮官(掌旗官)光環：每幀重新計算一次，多個指揮官取最高加成
+function updateCommanderAuras(){
+  for(const e of G.enemies){ e.cmdSpeedMul = 1; e.cmdDmgMul = 1; }
+  for(const f of G.enemies){
+    if(!f.auraBuff) continue;
+    for(const o of G.enemies){
+      const dx = o.x - f.x, dy = (o.row - f.row) * CELL_H;
+      if(Math.hypot(dx,dy) <= f.auraBuff.radius){
+        o.cmdSpeedMul = Math.max(o.cmdSpeedMul, f.auraBuff.speedMult);
+        o.cmdDmgMul = Math.max(o.cmdDmgMul, f.auraBuff.dmgMult);
+      }
+    }
+  }
+}
+
+function updateEnemies(dt){
+  updateCommanderAuras();
+  for(let i=G.enemies.length-1;i>=0;i--){
+    const e = G.enemies[i];
+
+    if(e.frozenTimer>0) e.frozenTimer = Math.max(0, e.frozenTimer-dt);
+    if(e.tempSlowTimer>0){ e.tempSlowTimer -= dt; if(e.tempSlowTimer<=0) e.tempSlowFactor = 1; }
+    if(e.chargeActive){ e.chargeTimer -= dt; if(e.chargeTimer<=0) e.chargeActive = false; }
+    if(e.curseTimer>0){ e.curseTimer = Math.max(0, e.curseTimer-dt); if(e.curseTimer<=0){ e.curseDmgMult=1; e.curseArmorRed=0; } }
+    if(e.dot){
+      applyDamage(e, e.dot.dps*dt, { canHitSubmerged:true, skipRallyDefense:true });
+      e.dot.remaining -= dt;
+      if(e.dot.remaining<=0) e.dot = null;
+    }
+    const frozen = e.frozenTimer>0;
+    const speedMul = frozen ? 0 : Math.min(e.auraSlowFactor, e.tempSlowFactor) * (e.chargeActive?CHARGE_SPEED_MULT:1) * (e.cmdSpeedMul||1);
+
+    // 醫療船：不上陸，靠岸後原地治療
+    if(e.noLand){
+      if(e.state!=='camping'){
+        if(e.onShip && e.x <= seaBoundaryX(e.row)+2){
+          e.state = 'camping';
+          e.x = seaBoundaryX(e.row)+18;
+        } else if(!frozen){
+          e.x -= e.speed*speedMul*dt;
+        }
+      }
+      for(const o of G.enemies){
+        if(o===e || !o.onShip) continue;
+        const dx=o.x-e.x, dy=(o.row-e.row)*CELL_H;
+        if(Math.hypot(dx,dy) <= (e.healRadius||150)){
+          o.shipHp = Math.min(o.shipMaxHp, o.shipHp + o.shipMaxHp*(e.healPct||0.03)*dt);
+        }
+      }
+      if(e.onShip && e.shipHp<=0){
+        const g = Math.max(1, Math.round(e.gold*0.6));
+        G.gold += g;
+        spawnFloat(e.x, GRID_Y+e.row*CELL_H+20, '+'+g+' 醫療船擊沉！', '#80d8ff');
+        G.enemies.splice(i,1);
+        registerKill();
+      }
+      continue;
+    }
+
+    // 搶灘登陸：船靠岸了，依「船隻剩餘血量比例」決定這船能成功上岸幾人，
+    // 每個上岸的散兵都是獨立單位，各自進入「架盾建立陣地」狀態
+    if(e.state==='walking' && e.onShip && e.x <= seaBoundaryX(e.row) && seaWidthOf(e.row) > 0){
+      const landX = seaBoundaryX(e.row);
+      if(e.troopsPerShip > 1){
+        const hpFrac = clamp(e.shipHp / e.shipMaxHp, 0, 1);
+        let survivors = Math.round(e.troopsPerShip * hpFrac);
+        if(survivors <= 0 && e.shipHp > 0) survivors = 1; // 船沒沉，至少有人搶灘成功
+        survivors = clamp(survivors, 0, e.troopsPerShip);
+        for(let k=0;k<survivors;k++){
+          spawnLandedTroop(e.type, e.row, e.levelMult, landX - k*22);
+        }
+        const lost = e.troopsPerShip - survivors;
+        if(survivors <= 0){
+          spawnFloat(landX, GRID_Y+e.row*CELL_H-14, '搶灘失敗，全員陣亡！', '#ff5252');
+        } else if(lost > 0){
+          spawnFloat(landX, GRID_Y+e.row*CELL_H-14, `搶灘：${survivors}/${e.troopsPerShip} 人上岸`, '#ff8a65');
+        } else {
+          spawnFloat(landX, GRID_Y+e.row*CELL_H-14, `搶灘：${survivors}/${e.troopsPerShip} 全員上岸！`, '#ffd54f');
+        }
+        G.enemies.splice(i,1);
+        continue;
+      }
+      e.onShip = false;
+      e.state = 'rallying';
+      e.rallyTimer = 0;
+      e.laneScanCd = 0;
+      e.attackingTower = null;
+    }
+
+    // 架盾陣地：固守原地(享有架盾減傷/閃避)，有遠程能力者對砲塔開火壓制；
+    // 每隔一段時間評估同列動線是否安全，安全才會下令全隊衝鋒(人數壓倒性優勢或等太久則為保底)
+    if(e.state === 'rallying'){
+      e.rallyTimer += dt;
+
+      // 陣地對轟：鎖定同列射程內最近的砲塔開火(仍保有架盾姿態與減傷)
+      if(e.ranged && !frozen){
+        const rowTowers = G.towers.filter(t=>t.row===e.row);
+        let nearest=null, nd=Infinity;
+        for(const t of rowTowers){
+          const d = e.x - (GRID_X+t.col*CELL_W+CELL_W);
+          if(d < 0) continue;
+          if(d<nd){ nd=d; nearest=t; }
+        }
+        if(nearest && nd <= e.atkRange){
+          e.attackingTower = nearest;
+          e.atkCd -= dt;
+          if(e.atkCd<=0){
+            nearest.hp -= effectiveDmg(e);
+            e.atkCd = e.atkInterval;
+            if(nearest.hp<=0){ removeTower(nearest); e.attackingTower=null; }
+          }
+        } else {
+          e.attackingTower = null;
+        }
+      }
+
+      // 陣地觀察：定期偵查同列動線是否已淨空
+      e.laneScanCd -= dt;
+      if(e.laneScanCd <= 0){
+        e.laneScanCd = LANE_SCAN_INTERVAL;
+        let nearby = 0;
+        for(const o of G.enemies){
+          if(o===e || o.state!=='rallying') continue;
+          if(Math.abs(o.row-e.row) > 1) continue;
+          if(Math.abs(o.x-e.x) > RALLY_RADIUS) continue;
+          nearby++;
+        }
+        const safe = laneClear(e.row);
+        const massOverride = (nearby+1) >= RALLY_CRITICAL_MASS;
+        const timeoutOverride = e.rallyTimer >= RALLY_MAX_WAIT;
+        if(safe || massOverride || timeoutOverride){
+          for(const o of G.enemies){
+            if(o.state!=='rallying') continue;
+            if(Math.abs(o.row-e.row) > 1) continue;
+            if(Math.abs(o.x-e.x) > RALLY_RADIUS) continue;
+            o.state = 'walking';
+            o.attackingTower = null;
+            o.chargeActive = true;
+            o.chargeTimer = CHARGE_DURATION;
+          }
+          spawnFloat(e.x, GRID_Y+e.row*CELL_H-14, safe ? '⚡動線安全，衝鋒！' : '⚡衝鋒！', '#ffab40');
+        }
+      }
+    }
+
+    // 遠程弓箭手：站在射程內原地攻擊，不需貼身(集結中不搶跑)
+    if(e.ranged && e.state!=='attacking' && e.state!=='rallying'){
+      const rowTowers = G.towers.filter(t=>t.row===e.row && (GRID_X+t.col*CELL_W) < e.x);
+      let nearest=null, nd=Infinity;
+      for(const t of rowTowers){
+        const d = e.x - (GRID_X+t.col*CELL_W+CELL_W);
+        if(d<nd){ nd=d; nearest=t; }
+      }
+      if(nearest && nd <= e.atkRange){ e.state='ranged'; e.attackingTower=nearest; }
+      else if(e.state==='ranged'){ e.state='walking'; e.attackingTower=null; }
+    }
+
+    if(e.state === 'ranged'){
+      if(!e.attackingTower || !G.towers.includes(e.attackingTower)){
+        e.state='walking'; e.attackingTower=null;
+      } else if(!frozen){
+        e.atkCd -= dt;
+        if(e.atkCd<=0){
+          e.attackingTower.hp -= effectiveDmg(e);
+          e.atkCd = e.atkInterval;
+          if(e.attackingTower.hp<=0){ removeTower(e.attackingTower); e.state='walking'; e.attackingTower=null; }
+        }
+      }
+    } else if(e.state === 'attacking'){
+      if(!e.attackingTower || !G.towers.includes(e.attackingTower)){
+        e.state = 'walking'; e.attackingTower = null;
+      } else if(!frozen){
+        e.attackingTower.hp -= effectiveDmg(e)*dt;
+        if(e.attackingTower.hp <= 0){
+          removeTower(e.attackingTower);
+          e.state = 'walking'; e.attackingTower = null;
+        }
+      }
+    }
+
+    if(e.state === 'walking' && !frozen){
+      const curSpeed = (!e.onShip && e.landSpeed) ? e.landSpeed : e.speed;
+      const nextX = e.x - curSpeed*speedMul*dt;
+      const rowTowers = G.towers.filter(t=>t.row===e.row);
+      let blocked = null;
+      for(const t of rowTowers){
+        const left = GRID_X + t.col*CELL_W, right = left + CELL_W;
+        if(e.x <= right + ENGAGE_EPS && e.x >= left){ blocked = t; break; }
+        if(nextX <= right && e.x > right){ blocked = t; break; }
+      }
+      if(blocked){
+        const queueAhead = G.enemies.filter(o => o!==e && o.row===e.row && o.attackingTower===blocked && o.state==='attacking').length;
+        e.x = GRID_X + blocked.col*CELL_W + CELL_W + queueAhead*Math.max(26, CELL_W*0.34);
+        e.state = 'attacking'; e.attackingTower = blocked;
+      } else {
+        e.x = nextX;
+        if(e.x <= GRID_X){
+          let dmgToBase = effectiveDmg(e)*1.8;
+          if(G.wallInvulnTimer>0) dmgToBase = 0;
+          else if(G.wallShieldTimer>0) dmgToBase *= (1-G.wallShieldPct);
+          G.baseHP = clamp(G.baseHP - dmgToBase, 0, G.baseMaxHP);
+          if(dmgToBase>0) AudioSys.sfx.baseHit();
+          G.enemies.splice(i,1);
+          continue;
+        }
+      }
+    }
+
+    if(e.onShip){
+      if(e.shipHp <= 0){ resolveShipSunk(e, i); continue; }
+    } else if(e.hp <= 0){
+      G.gold += e.gold;
+      spawnFloat(e.x, GRID_Y + e.row*CELL_H + 20, '+'+e.gold, '#ffd54f');
+      G.enemies.splice(i,1);
+      registerKill();
+      AudioSys.sfx.enemyDeath();
+      continue;
+    }
+
+    if(e.isBossTier){
+      const ratio = e.onShip ? e.shipHp/e.shipMaxHp : e.hp/e.maxHp;
+      e.rageThresholds.forEach((th,idx)=>{
+        if(!e.rageDone[idx] && ratio<=th){
+          e.rageDone[idx] = true;
+          e.speed*=1.4; e.landSpeed*=1.4; e.dmg = Math.round(e.dmg*1.3*10)/10;
+          spawnFloat(e.x, GRID_Y+e.row*CELL_H-20, '狂暴！', '#ff5252');
+        }
+      });
+      e.summonThresholds.forEach((th,idx)=>{
+        if(!e.summonDone[idx] && ratio<=th){
+          e.summonDone[idx] = true;
+          e.summonTypes.forEach(st=>{ spawnEnemy(st, e.row, G.currentLevelMult); });
+          spawnFloat(e.x, GRID_Y+e.row*CELL_H-20, '召喚支援！', '#ba68c8');
+        }
+      });
+      if(e.abilityInterval>0 && !frozen){
+        e.abilityCd -= dt;
+        if(e.abilityCd<=0){
+          e.abilityCd = e.abilityInterval;
+          let targets = [];
+          if(e.abilityScope==='wide'){
+            targets = G.towers.filter(t=>Math.abs(t.row-e.row)<=1);
+          } else {
+            const rowTowers = G.towers.filter(t=>t.row===e.row);
+            let nearest=null, nd=Infinity;
+            for(const t of rowTowers){
+              const d = Math.abs(e.x-(GRID_X+t.col*CELL_W+CELL_W/2));
+              if(d<nd){ nd=d; nearest=t; }
+            }
+            if(nearest) targets=[nearest];
+          }
+          if(targets.length){
+            targets.forEach(t=>{ t.disabledTimer = Math.max(t.disabledTimer||0, e.abilityDisableDuration); });
+            spawnFloat(e.x, GRID_Y+e.row*CELL_H-34, e.abilityScope==='wide' ? '⚡艦隊齊射壓制！' : '🎵魅惑光束！', '#ce93d8');
+          }
+        }
+      }
+    }
+  }
+  if(G.baseHP <= 0 && !G.gameOver){ G.gameOver = true; AudioSys.sfx.gameOver(); }
+}
+
+function updateCoins(dt){
+  G.coinTimer -= dt;
+  if(G.coinTimer <= 0){
+    G.coinTimer = rand(5.5, 9);
+    G.coins.push({
+      x: rand(GRID_X+40, GRID_X+COLS*CELL_W-40),
+      y: GRID_Y - 30,
+      vy: rand(28,42),
+      life: 6.5,
+      value: Math.round(rand(15,32))
+    });
+  }
+  for(let i=G.coins.length-1;i>=0;i--){
+    const c = G.coins[i];
+    c.y += c.vy*dt;
+    c.life -= dt;
+    if(c.life <= 0 || c.y > GRID_Y + ROWS*CELL_H) G.coins.splice(i,1);
+  }
+}
+
+function updateFloats(dt){
+  for(let i=G.floats.length-1;i>=0;i--){
+    const f = G.floats[i];
+    f.y += f.vy*dt; f.life -= dt;
+    if(f.life<=0) G.floats.splice(i,1);
+  }
+  for(let i=G.heroFlashes.length-1;i>=0;i--){
+    G.heroFlashes[i].life -= dt;
+    if(G.heroFlashes[i].life<=0) G.heroFlashes.splice(i,1);
+  }
+}
+
+function update(dt){
+  if(G.screen !== 'playing' || G.paused || G.gameOver || G.levelComplete || G.pendingMerge || G.pendingHeroClass || G.showHeroShop) return;
+  const sdt = dt * G.speedMul;
+  updateWaves(sdt);
+  updateTowers(sdt);
+  updateProjectiles(sdt);
+  updateEnemies(sdt);
+  updateHero(sdt);
+  updateCoins(sdt);
+  updateFloats(sdt);
+}
+
+// ============ 英雄(城牆主角)系統邏輯 ============
+function heroPos(){ return { x: GRID_X - 20, y: GRID_Y + ROWS*CELL_H/2 }; }
+
+function registerKill(){
+  const h = G.hero;
+  h.kills++;
+  while(h.level-1 < KILL_THRESHOLDS.length && h.kills >= KILL_THRESHOLDS[h.level-1]){
+    h.level++;
+    const pos = heroPos();
+    spawnFloat(pos.x, pos.y-50, '英雄升級！Lv.'+h.level, '#ffd54f');
+    if(h.level===5 && !h.baseClass){ G.pendingHeroClass = 'base'; }
+    if(h.level===10 && h.baseClass && !h.finalClass){ G.pendingHeroClass = 'final'; }
+  }
+}
+
+function updateHero(dt){
+  const h = G.hero;
+  if(G.wallShieldTimer>0) G.wallShieldTimer = Math.max(0, G.wallShieldTimer-dt);
+  if(G.wallInvulnTimer>0) G.wallInvulnTimer = Math.max(0, G.wallInvulnTimer-dt);
+  if(h.abilityCd.a>0) h.abilityCd.a = Math.max(0, h.abilityCd.a-dt);
+  if(h.abilityCd.b>0) h.abilityCd.b = Math.max(0, h.abilityCd.b-dt);
+  if(h.rageTimer>0){ h.rageTimer -= dt; if(h.rageTimer<=0){ h.rageTimer=0; h.rageMult=1; h.rageIgnoreArmor=false; } }
+  h.atkCd -= dt;
+  if(h.atkCd>0) return;
+  const familyKey = h.baseClass || 'recruit';
+  const stats = HERO_FAMILY_STATS[familyKey] || HERO_FAMILY_STATS.recruit;
+  const pos = heroPos();
+  const lvlMul = 1 + (h.level-1)*0.05;
+  let best=null, bestDist=Infinity;
+  for(const e of G.enemies){
+    const dx = e.x-pos.x, dy = (GRID_Y+e.row*CELL_H+CELL_H/2)-pos.y;
+    if(dx < -30) continue;
+    const dist = Math.hypot(dx,dy);
+    if(dist>stats.range) continue;
+    if(dist<bestDist){ bestDist=dist; best=e; }
+  }
+  if(!best){ h.atkCd = 0.15; return; }
+  const dmg = stats.dmg*lvlMul*(h.rageMult||1);
+  const opts = { ignoreArmor: !!h.rageIgnoreArmor };
+  applyDamage(best, dmg, opts);
+  if(stats.splash>0){
+    for(const e2 of G.enemies){
+      if(e2===best) continue;
+      const dx=e2.x-best.x, dy=(e2.row-best.row)*CELL_H;
+      if(Math.hypot(dx,dy)<=stats.splash) applyDamage(e2, dmg*0.5, opts);
+    }
+  }
+  if(familyKey==='mage'){ best.dot = { dps: dmg*0.35, remaining:2 }; }
+  G.heroFlashes.push({ x:best.x, y:GRID_Y+best.row*CELL_H+CELL_H/2, life:0.22 });
+  h.atkCd = stats.cd / (h.rageMult||1);
+}
+
+function castAbility(slot){
+  const h = G.hero;
+  const activeClass = h.finalClass || h.baseClass;
+  if(!activeClass) return;
+  const lvl = h.abilityLevel[slot];
+  if(!lvl || lvl<=0) return;
+  if(h.abilityCd[slot]>0) return;
+  const def = ABILITIES[activeClass][slot];
+  const mag = def.mags[lvl-1];
+  h.abilityCd[slot] = def.cds[lvl-1];
+  const pos = heroPos();
+  const inRange = (e, r) => {
+    const dx=e.x-pos.x, dy=(GRID_Y+e.row*CELL_H+CELL_H/2)-pos.y;
+    return dx>=-40 && Math.hypot(dx,dy) <= (r===undefined?999999:r);
+  };
+  const COMMANDER_TYPES = ['flag','boss','megaboss20','megaboss40'];
+  switch(activeClass){
+    case 'warrior':
+      if(slot==='a'){
+        G.enemies.forEach(e=>{ if(inRange(e,240)) applyDamage(e, mag.dmg, {ignoreArmor:true}); });
+      } else {
+        G.wallShieldPct = Math.max(G.wallShieldPct, mag.shieldPct); G.wallShieldTimer = Math.max(G.wallShieldTimer, mag.dur);
+      }
+      break;
+    case 'ranger':
+      if(slot==='a'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
+        if(cands[0]) applyDamage(cands[0], mag.dmg, {ignoreArmor:true});
+      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,320)) e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); });
+      }
+      break;
+    case 'mage':
+      if(slot==='a'){
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)) applyDamage(e, mag.dmg, {}); });
+      } else {
+        G.enemies.forEach(e=>{
+          if(!inRange(e,mag.radius)) return;
+          e.tempSlowFactor = Math.min(e.tempSlowFactor, 1-mag.slowPct);
+          e.tempSlowTimer = Math.max(e.tempSlowTimer, mag.dur);
+        });
+      }
+      break;
+    case 'paladin':
+      if(slot==='a'){
+        G.enemies.forEach(e=>{ if(inRange(e,320)) e.frozenTimer=Math.max(e.frozenTimer,mag.stunDur); });
+        G.wallShieldPct = mag.shieldPct; G.wallShieldTimer = 6;
+      } else {
+        G.wallInvulnTimer = Math.max(G.wallInvulnTimer, mag.invulnDur);
+        G.baseHP = clamp(G.baseHP+mag.heal, 0, G.baseMaxHP);
+      }
+      break;
+    case 'berserker':
+      if(slot==='a'){
+        G.enemies.forEach(e=>{ if(inRange(e,260)) applyDamage(e, mag.dmg, {ignoreArmor:true}); });
+      } else {
+        h.rageTimer = mag.dur; h.rageMult = mag.mult; h.rageIgnoreArmor = true;
+      }
+      break;
+    case 'scout':
+      if(slot==='a'){
+        const cands = G.enemies.filter(e=>inRange(e,420));
+        const target = cands.find(e=>COMMANDER_TYPES.includes(e.type)) || cands.sort((a,b)=>a.x-b.x)[0];
+        if(target){
+          target.frozenTimer = Math.max(target.frozenTimer, mag.freeze);
+          const isCmd = COMMANDER_TYPES.includes(target.type);
+          applyDamage(target, mag.dmg*(isCmd?mag.bonus:1), {ignoreArmor:true});
+        }
+      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,320)) e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); });
+      }
+      break;
+    case 'sniper':
+      if(slot==='a'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
+        if(cands[0]) applyDamage(cands[0], mag.dmg, {ignoreArmor:true, bypassDeflect:true, shieldMult:2.2});
+      } else {
+        G.enemies.forEach(e=>{
+          if(!inRange(e)) return;
+          const ratio = e.onShip? e.shipHp/e.shipMaxHp : e.hp/e.maxHp;
+          if(ratio<=mag.pct){ if(e.onShip) e.shipHp=-9999; else e.hp=-9999; }
+          else if(['boss','megaboss20','megaboss40'].includes(e.type)) applyDamage(e, mag.trueDmg, {ignoreArmor:true});
+        });
+      }
+      break;
+    case 'elementalist':
+      if(slot==='a'){
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)) applyDamage(e, mag.dmg, {}); });
+      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)) e.dot = { dps:mag.dps, remaining:mag.dur }; });
+      }
+      break;
+    case 'warlock':
+      if(slot==='a'){
+        G.enemies.forEach(e=>{ e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); });
+      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,300)){ e.curseTimer=Math.max(e.curseTimer,mag.dur); e.curseDmgMult=mag.dmgMult; e.curseArmorRed=mag.armorRed; } });
+      }
+      break;
+  }
+  spawnFloat(pos.x, pos.y-60, def.name+'！', '#ffe082');
+  AudioSys.sfx.heroAbility();
+}
+
+// ============ 繪圖：背景 ============
+function drawBackground(){
+  ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+  const series = currentSeries();
+  const sky = ctx.createLinearGradient(0,0,0,GRID_Y);
+  sky.addColorStop(0,series.sky[0]); sky.addColorStop(1,series.sky[1]);
+  ctx.fillStyle = sky; ctx.fillRect(0,0,CANVAS_W,GRID_Y);
+  const t = Date.now()/500;
+  for(let r=0;r<ROWS;r++){
+    const seaW = seaWidthOf(r);
+    for(let c=0;c<COLS;c++){
+      const x=GRID_X+c*CELL_W, y=GRID_Y+r*CELL_H;
+      if(isSeaCell(r,c)){
+        ctx.fillStyle = (r+c)%2===0 ? series.seaA : series.seaB;
+        ctx.fillRect(x,y,CELL_W,CELL_H);
+        ctx.strokeStyle=series.wave; ctx.lineWidth=1.4;
+        for(let wy=12; wy<CELL_H; wy+=18){
+          ctx.beginPath();
+          for(let wx=0; wx<=CELL_W; wx+=8){
+            const yy = y+wy+Math.sin((wx+x)/14 + t)*2.2;
+            if(wx===0) ctx.moveTo(x+wx,yy); else ctx.lineTo(x+wx,yy);
+          }
+          ctx.stroke();
+        }
+      } else {
+        ctx.fillStyle = (r+c)%2===0 ? series.landA : series.landB;
+        ctx.fillRect(x,y,CELL_W,CELL_H);
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.strokeRect(x,y,CELL_W,CELL_H);
+    }
+    if(seaW>0 && seaW<COLS){
+      const bx = seaBoundaryX(r);
+      ctx.fillStyle=series.boundary;
+      ctx.fillRect(bx-4, GRID_Y+r*CELL_H, 8, CELL_H);
+    }
+  }
+  drawWall();
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  for(let r=0;r<ROWS;r++) ctx.fillRect(GRID_X, GRID_Y+r*CELL_H+CELL_H-3, COLS*CELL_W, 3);
+}
+
+function drawWall(){
+  const wallW = WALL_W;
+  const wx = GRID_X - wallW;
+  const wallH = ROWS*CELL_H;
+  const grad = ctx.createLinearGradient(wx,0,wx+wallW,0);
+  grad.addColorStop(0,'#4e4640'); grad.addColorStop(1,'#6b6058');
+  ctx.fillStyle = grad;
+  ctx.fillRect(wx, GRID_Y, wallW, wallH);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth=1;
+  const brickH=14;
+  for(let y=GRID_Y; y<GRID_Y+wallH; y+=brickH){
+    ctx.beginPath(); ctx.moveTo(wx,y); ctx.lineTo(wx+wallW,y); ctx.stroke();
+    const offset = (((y-GRID_Y)/brickH)|0)%2===0 ? 0 : wallW/2;
+    ctx.beginPath(); ctx.moveTo(wx+offset, y); ctx.lineTo(wx+offset, Math.min(y+brickH,GRID_Y+wallH)); ctx.stroke();
+  }
+  ctx.fillStyle = '#5c534b';
+  const merlonW = 12, gapW=10, merlonH=14;
+  for(let x=wx; x<wx+wallW; x+=merlonW+gapW){
+    ctx.fillRect(x, GRID_Y-merlonH, Math.min(merlonW,wx+wallW-x), merlonH);
+  }
+  ctx.font='16px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('🔥', wx+wallW/2, GRID_Y+26);
+  ctx.fillText('🔥', wx+wallW/2, GRID_Y+wallH-16);
+  if(G.wallShieldTimer>0){
+    ctx.save(); ctx.globalAlpha=0.35;
+    ctx.fillStyle='#4fc3f7'; ctx.fillRect(wx,GRID_Y,wallW,wallH);
+    ctx.restore();
+  }
+  if(G.wallInvulnTimer>0){
+    ctx.save(); ctx.globalAlpha=0.4+Math.sin(Date.now()/100)*0.15;
+    ctx.fillStyle='#ffd54f'; ctx.fillRect(wx,GRID_Y,wallW,wallH);
+    ctx.restore();
+  }
+}
+
+function drawHero(){
+  const h = G.hero;
+  const pos = heroPos();
+  const classKey = h.finalClass || h.baseClass || 'recruit';
+  const info = HERO_TREE[classKey] || HERO_TREE.recruit;
+  const bob = Math.sin(Date.now()/260)*3;
+  ctx.save();
+  ctx.translate(pos.x, pos.y+bob);
+  if(h.rageTimer>0){
+    ctx.beginPath(); ctx.arc(0,-4,30,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,23,68,0.28)'; ctx.fill();
+  }
+  ctx.beginPath(); ctx.ellipse(0,30,16,5,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fill();
+  ctx.fillStyle = info.color;
+  ctx.beginPath(); ctx.ellipse(-2,10,11,17,0.05,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2b2b2b';
+  ctx.fillRect(-8,14,16,14);
+  ctx.fillStyle = '#e0a978';
+  ctx.beginPath(); ctx.arc(0,-8,10,0,Math.PI*2); ctx.fill();
+  ctx.font='22px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(info.emoji, 14, -2);
+  ctx.font='bold 11px sans-serif';
+  ctx.fillStyle='#ffd54f'; ctx.beginPath(); ctx.arc(-16,-20,10,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#3e2723'; ctx.fillText('Lv'+h.level, -16, -19);
+  ctx.restore();
+  ctx.fillStyle='#fff'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(info.name, pos.x, pos.y+48);
+}
+
+function drawHeroFlashes(){
+  for(const f of G.heroFlashes){
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, f.life/0.22);
+    ctx.beginPath(); ctx.arc(f.x, f.y, 16*(1-f.life/0.22)+6, 0, Math.PI*2);
+    ctx.strokeStyle='#ffe082'; ctx.lineWidth=3; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawHUD(){
+  const s = clamp(GRID_Y/90, 0.6, 1.25);
+  const barH0 = GRID_Y - Math.round(10*s);
+  ctx.fillStyle = '#20344a';
+  ctx.fillRect(0,0,CANVAS_W,barH0);
+  ctx.fillStyle = '#0e2a44';
+  ctx.fillRect(0,barH0,CANVAS_W,GRID_Y-barH0);
+
+  const midY = barH0/2;
+
+  ctx.font = Math.round(32*s)+'px sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('💰', 16, midY);
+  ctx.fillStyle = '#ffd54f'; ctx.font = 'bold ' + Math.round(29*s) + 'px sans-serif';
+  ctx.fillText(Math.floor(G.gold), 16 + Math.round(38*s), midY);
+
+  ctx.fillStyle = '#eaf2fb'; ctx.font = 'bold ' + Math.round(23*s) + 'px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('第 ' + G.level + ' 關 · ' + currentSeries().name, CANVAS_W/2, midY - Math.round(14*s));
+  ctx.font = 'bold ' + Math.round(17*s)+'px sans-serif'; ctx.fillStyle = '#c7ddf5';
+  let waveText;
+  if(G.levelComplete) waveText = '關卡完成！';
+  else if(G.gameOver) waveText = '防線失守...';
+  else if(G.waveIdx === -1) waveText = '準備中 ' + Math.ceil(G.prepTimer) + '...';
+  else if(G.spawning || G.enemies.length>0) waveText = '第 ' + (G.waveIdx+1) + ' / ' + G.waves.length + ' 波' + (G.currentIsSurge?' ⚠️猛攻':'');
+  else waveText = '下一波倒數 ' + Math.ceil(G.betweenTimer||0);
+  ctx.fillText(waveText, CANVAS_W/2, midY + Math.round(14*s));
+
+  // 暫停／選單／加速／堡壘耐久度 已移到下方按鈕列(手機雙指分工用)，
+  // 這裡空出來的右側改放英雄狀態(等級/職業/累積擊殺)，純資訊、不需點擊，放大加強存在感。
+  const classInfo = HERO_TREE[G.hero.finalClass||G.hero.baseClass||'recruit'];
+  ctx.textAlign='right';
+  ctx.fillStyle='#ffd54f'; ctx.font='bold '+Math.round(20*s)+'px sans-serif';
+  ctx.fillText(classInfo.emoji+' Lv.'+G.hero.level+' '+classInfo.name, CANVAS_W-16, midY-Math.round(12*s));
+  ctx.fillStyle='#c7ddf5'; ctx.font='bold '+Math.round(15*s)+'px sans-serif';
+  ctx.fillText('累積擊殺 '+G.hero.kills, CANVAS_W-16, midY+Math.round(12*s));
+}
+
+function drawButton(x,y,w,h,label,bg,fontSize){
+  ctx.fillStyle = bg || '#455a64';
+  roundRect(x,y,w,h,8); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold ' + (fontSize||18) + 'px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(label, x+w/2, y+h/2+1);
+}
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+// ============ 扇形攻擊範圍預覽 ============
+function drawFan(center, cfg, colorOverride){
+  const halfAngle = (cfg.angle/2) * Math.PI/180;
+  const radius = Math.min(cfg.range===Infinity ? COLS*CELL_W*1.5 : cfg.range, COLS*CELL_W*1.5);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(GRID_X, GRID_Y, COLS*CELL_W, ROWS*CELL_H);
+  ctx.clip();
+  ctx.beginPath();
+  ctx.moveTo(center.x, center.y);
+  ctx.arc(center.x, center.y, radius, -halfAngle, halfAngle);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.13)';
+  ctx.fill();
+  ctx.strokeStyle = colorOverride || '#ffffff';
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTowers(){
+  for(const t of G.towers){
+    const cfg = NODES[t.key];
+    const c = cellCenter(t.row,t.col);
+    if(G.selected && G.selected.row===t.row && G.selected.col===t.col){
+      drawFan(c, cfg, branchColor(cfg.branch));
+    }
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(spriteScale, spriteScale);
+    ctx.beginPath(); ctx.arc(0,6,34,0,Math.PI*2);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,32,0,Math.PI*2);
+    ctx.fillStyle = cfg.color; ctx.fill();
+    ctx.lineWidth=3; ctx.strokeStyle = '#efd9a5'; ctx.stroke();
+    ctx.font='34px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(cfg.emoji, 0, 2);
+    ctx.font='bold 12px sans-serif';
+    ctx.fillStyle='#ffd54f';
+    ctx.beginPath(); ctx.arc(24,-24,11,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#3e2723'; ctx.fillText(String(tierOf(t.key)+1), 24, -23);
+    if(t.hp < t.maxHp){
+      const w=52,h=6, x=-w/2, y=34;
+      ctx.fillStyle='#1a2f42'; ctx.fillRect(x,y,w,h);
+      ctx.fillStyle = t.hp/t.maxHp>0.4? '#66bb6a':'#e53935';
+      ctx.fillRect(x,y,w*(t.hp/t.maxHp),h);
+    }
+    if(t.disabledTimer > 0){
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.arc(0,0,32,0,Math.PI*2);
+      ctx.fillStyle = '#4a148c'; ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.font='26px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('⚡✕', 0, 2);
+    }
+    if(G.selected && G.selected.row===t.row && G.selected.col===t.col){
+      ctx.beginPath(); ctx.arc(0,0,38,0,Math.PI*2);
+      ctx.lineWidth=3; ctx.strokeStyle='#ffee58'; ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ============ 海盜向量圖像 ============
+function skinFor(type){
+  return type==='heavy' ? '#c98a5a' : (type==='boss' ? '#d99a68' : '#e0a978');
+}
+function drawPirateHead(skin, eyepatch){
+  ctx.fillStyle = skin;
+  ctx.beginPath(); ctx.arc(0,-16,11,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.fillStyle='#1a1a1a';
+  if(eyepatch!=='left'){ ctx.beginPath(); ctx.arc(-4,-17,1.6,0,Math.PI*2); ctx.fill(); }
+  if(eyepatch!=='right'){ ctx.beginPath(); ctx.arc(4,-17,1.6,0,Math.PI*2); ctx.fill(); }
+  if(eyepatch){
+    const ex = eyepatch==='left' ? -4 : 4;
+    ctx.fillStyle='#1a1a1a';
+    ctx.beginPath(); ctx.ellipse(ex,-17,3.2,2.6,0,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(-11,-20); ctx.lineTo(11,-14); ctx.stroke();
+  }
+  ctx.strokeStyle='#3e2110'; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(-7,-21); ctx.lineTo(-2,-19); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(7,-21); ctx.lineTo(2,-19); ctx.stroke();
+  ctx.strokeStyle='#5d2e1a'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(-4,-10); ctx.lineTo(4,-10); ctx.stroke();
+}
+function drawPirateBody(shirt, pants){
+  ctx.fillStyle = '#2b1c10';
+  ctx.fillRect(-11,24,10,5);
+  ctx.fillRect(1,24,10,5);
+  ctx.fillStyle = pants;
+  ctx.fillRect(-10,9,8,17);
+  ctx.fillRect(2,9,8,17);
+  ctx.fillStyle = shirt;
+  ctx.beginPath(); ctx.ellipse(-14,-1,5,9,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(14,-1,5,9,-0.3,0,Math.PI*2); ctx.fill();
+  roundRect(-13,-11,26,22,6); ctx.fillStyle=shirt; ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.2)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.fillStyle='#4a2f18'; ctx.fillRect(-13,7,26,4);
+}
+function drawShadow(){
+  ctx.beginPath(); ctx.ellipse(0,31,17,5,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.28)'; ctx.fill();
+}
+function drawBasicPirate(){
+  drawShadow();
+  drawPirateBody('#eef1e8','#48331f');
+  ctx.strokeStyle='#2a5ca8'; ctx.lineWidth=2.2;
+  for(let i=-6;i<=6;i+=5){ ctx.beginPath(); ctx.moveTo(-12,i); ctx.lineTo(12,i); ctx.stroke(); }
+  ctx.fillStyle='#c62828';
+  ctx.beginPath(); ctx.moveTo(-12,-24); ctx.quadraticCurveTo(0,-33,12,-24);
+  ctx.lineTo(9,-18); ctx.quadraticCurveTo(0,-25,-9,-18); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(9,-23); ctx.quadraticCurveTo(19,-17,13,-8);
+  ctx.quadraticCurveTo(11,-17,6,-20); ctx.closePath(); ctx.fill();
+  drawPirateHead('#e0a978');
+  ctx.strokeStyle='#cfd8dc'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(-16,-1); ctx.lineTo(-27,-7); ctx.stroke();
+  ctx.strokeStyle='#6d4c41'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(-16,-1); ctx.lineTo(-12,1); ctx.stroke();
+}
+function drawFastPirate(){
+  ctx.save(); ctx.rotate(-0.08);
+  drawShadow();
+  drawPirateBody('#37474f','#263238');
+  ctx.fillStyle='#43a047';
+  ctx.fillRect(-11,-23,22,5);
+  ctx.beginPath(); ctx.moveTo(10,-21); ctx.lineTo(20,-26); ctx.lineTo(19,-17); ctx.closePath(); ctx.fill();
+  drawPirateHead('#e0a978');
+  ctx.strokeStyle='#cfd8dc'; ctx.lineWidth=2.6;
+  ctx.beginPath(); ctx.moveTo(-16,-3); ctx.lineTo(-26,-9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-16,5); ctx.lineTo(-25,9); ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=2;
+  for(let i=0;i<3;i++){ ctx.beginPath(); ctx.moveTo(18+i*4,-6+i*6); ctx.lineTo(30+i*4,-6+i*6); ctx.stroke(); }
+  ctx.restore();
+}
+function drawSwordPirate(){
+  drawShadow();
+  drawPirateBody('#6d2020','#1a1a1a');
+  ctx.fillStyle='#5a1a1a';
+  ctx.beginPath(); ctx.moveTo(-13,10); ctx.lineTo(-17,26); ctx.lineTo(-6,10); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(13,10); ctx.lineTo(17,26); ctx.lineTo(6,10); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath(); ctx.moveTo(-15,-24); ctx.quadraticCurveTo(0,-38,15,-24); ctx.quadraticCurveTo(0,-29,-15,-24); ctx.closePath(); ctx.fill();
+  ctx.fillRect(-15,-25,30,4);
+  drawPirateHead('#e0a978');
+  ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=3.4;
+  ctx.beginPath(); ctx.moveTo(-14,2); ctx.lineTo(-30,-14); ctx.stroke();
+  ctx.strokeStyle='#8d6e63'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(-14,2); ctx.lineTo(-10,6); ctx.stroke();
+}
+function drawHeavyPirate(){
+  ctx.save(); ctx.scale(1.15,1.15);
+  drawShadow();
+  drawPirateBody('#37474f','#263238');
+  ctx.fillStyle='#78909c';
+  roundRect(-13,-9,26,18,5); ctx.fill();
+  ctx.strokeStyle='#37474f'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.fillStyle='#455a64';
+  ctx.beginPath(); ctx.arc(-6,-2,1.6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(6,-2,1.6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0,5,1.6,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#546e7a';
+  ctx.beginPath(); ctx.arc(0,-17,12,Math.PI,0); ctx.fill();
+  ctx.fillRect(-12,-17,24,5);
+  ctx.fillStyle='#37474f'; ctx.fillRect(-3,-30,6,7);
+  drawPirateHead('#c98a5a');
+  ctx.fillStyle='#546e7a'; ctx.fillRect(-9,-15,18,3);
+  ctx.fillStyle='#5d4037';
+  ctx.beginPath(); ctx.ellipse(-20,2,7,10,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#8d6e63'; ctx.lineWidth=2; ctx.stroke();
+  ctx.restore();
+}
+function drawBossPirate(){
+  ctx.save(); ctx.scale(1.45,1.45);
+  ctx.beginPath(); ctx.arc(0,-2,26,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,82,82,0.18)'; ctx.fill();
+  drawShadow();
+  drawPirateBody('#b71c1c','#1a1a1a');
+  ctx.strokeStyle='#ffd54f'; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(-13,-4); ctx.lineTo(13,-4); ctx.stroke();
+  ctx.fillStyle='#7a1010';
+  ctx.beginPath(); ctx.moveTo(11,-9); ctx.lineTo(22,20); ctx.lineTo(9,10); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath(); ctx.moveTo(-16,-25); ctx.quadraticCurveTo(0,-40,16,-25); ctx.quadraticCurveTo(0,-30,-16,-25); ctx.closePath(); ctx.fill();
+  ctx.fillRect(-16,-26,32,4);
+  ctx.fillStyle='#eeeeee'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('☠', 0, -30);
+  drawPirateHead('#d99a68', 'left');
+  ctx.strokeStyle='#bdbdbd'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(-15,0); ctx.quadraticCurveTo(-26,-2,-24,-10); ctx.stroke();
+  ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=3.6;
+  ctx.beginPath(); ctx.moveTo(13,2); ctx.quadraticCurveTo(24,-6,30,-18); ctx.stroke();
+  ctx.strokeStyle='#4e342e'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(13,2); ctx.lineTo(9,7); ctx.stroke();
+  ctx.restore();
+}
+function drawArcherPirate(){
+  drawShadow();
+  drawPirateBody('#4e6b3a','#33421f');
+  ctx.fillStyle='#2e7d32';
+  ctx.beginPath(); ctx.moveTo(-12,-24); ctx.quadraticCurveTo(0,-33,12,-24); ctx.lineTo(9,-18); ctx.quadraticCurveTo(0,-25,-9,-18); ctx.closePath(); ctx.fill();
+  drawPirateHead('#e0a978');
+  ctx.strokeStyle='#6d4c41'; ctx.lineWidth=2.4;
+  ctx.beginPath(); ctx.arc(-16,0,14,-1.0,1.0); ctx.stroke();
+  ctx.strokeStyle='#cfd8dc'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(-16,-11); ctx.lineTo(-16,11); ctx.stroke();
+}
+function drawFlagPirate(){
+  drawShadow();
+  drawPirateBody('#4a148c','#1a1a1a');
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath(); ctx.moveTo(-14,-24); ctx.quadraticCurveTo(0,-36,14,-24); ctx.quadraticCurveTo(0,-28,-14,-24); ctx.closePath(); ctx.fill();
+  drawPirateHead('#d99a68');
+  ctx.strokeStyle='#6d4c41'; ctx.lineWidth=2.6;
+  ctx.beginPath(); ctx.moveTo(16,10); ctx.lineTo(16,-34); ctx.stroke();
+  ctx.fillStyle='#ffd54f';
+  ctx.beginPath(); ctx.moveTo(16,-34); ctx.lineTo(34,-27); ctx.lineTo(16,-20); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#4a148c'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('☠', 24, -26);
+}
+function drawShieldPirate(){
+  drawShadow();
+  drawPirateBody('#37474f','#263238');
+  drawPirateHead('#e0a978');
+  ctx.fillStyle='#607d8b';
+  roundRect(-26,-14,16,32,4); ctx.fill();
+  ctx.strokeStyle='#263238'; ctx.lineWidth=2; ctx.stroke();
+  ctx.fillStyle='#ffd54f'; ctx.beginPath(); ctx.arc(-18,2,4,0,Math.PI*2); ctx.fill();
+}
+function drawDiverPirate(){
+  drawShadow();
+  drawPirateBody('#01579b','#013a5e');
+  drawPirateHead('#c98a5a');
+  ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,-17,7,0,Math.PI*2); ctx.stroke();
+}
+function drawMegaboss20Pirate(){
+  ctx.save(); ctx.scale(1.2,1.2);
+  ctx.beginPath(); ctx.arc(0,-2,32,0,Math.PI*2);
+  ctx.fillStyle='rgba(186,104,200,0.3)'; ctx.fill();
+  drawBossPirate();
+  ctx.font='16px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('🎵', 0, -48);
+  ctx.restore();
+}
+function drawMegaboss40Pirate(){
+  ctx.save(); ctx.scale(1.4,1.4);
+  ctx.beginPath(); ctx.arc(0,-2,36,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,23,68,0.32)'; ctx.fill();
+  drawBossPirate();
+  ctx.font='18px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('👑', 0, -50);
+  ctx.restore();
+}
+function drawPirateSprite(type){
+  switch(type){
+    case 'basic': drawBasicPirate(); break;
+    case 'fast': drawFastPirate(); break;
+    case 'sword': drawSwordPirate(); break;
+    case 'heavy': drawHeavyPirate(); break;
+    case 'boss': drawBossPirate(); break;
+    case 'archer': drawArcherPirate(); break;
+    case 'shield': drawShieldPirate(); break;
+    case 'diver': drawDiverPirate(); break;
+    case 'flag': drawFlagPirate(); break;
+    case 'megaboss20': drawMegaboss20Pirate(); break;
+    case 'megaboss40': drawMegaboss40Pirate(); break;
+    default: drawBasicPirate();
+  }
+}
+
+function shadeColor(hex, percent){
+  let c = hex.replace('#','');
+  if(c.length===3) c = c.split('').map(ch=>ch+ch).join('');
+  const num = parseInt(c,16);
+  let r=(num>>16)&0xff, g=(num>>8)&0xff, b=num&0xff;
+  const amt = Math.round(2.55*percent);
+  r=clamp(r+amt,0,255); g=clamp(g+amt,0,255); b=clamp(b+amt,0,255);
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
+// ============ 海盜船隻 ============
+function drawShipHull(w,h,color){
+  const topW=w, botW=w*0.62;
+  // 吃水陰影：船身壓在水面上的暗色橢圓，讓船有「浮在水裡」的重量感
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(0,h*0.85,botW*0.72,h*0.5,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fill();
+  ctx.restore();
+  drawShipReflection(w,h,color);
+  drawWaterWake(w);
+  ctx.beginPath();
+  ctx.moveTo(-topW/2,0); ctx.lineTo(topW/2,0);
+  ctx.lineTo(botW/2,h); ctx.lineTo(-botW/2,h);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0, shadeColor(color,16));
+  grad.addColorStop(0.55, color);
+  grad.addColorStop(1, shadeColor(color,-26));
+  ctx.fillStyle=grad; ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1.5; ctx.stroke();
+  // 船板木紋：隨船身收窄的橫向甲板線
+  ctx.strokeStyle='rgba(0,0,0,0.16)'; ctx.lineWidth=1;
+  for(let yy=h*0.32; yy<h; yy+=Math.max(3,h*0.3)){
+    const ratio = yy/h;
+    const hw = (topW/2)*(1-ratio) + (botW/2)*ratio;
+    ctx.beginPath(); ctx.moveTo(-hw,yy); ctx.lineTo(hw,yy); ctx.stroke();
+  }
+  // 船板直向拼縫，加強木材質感
+  ctx.strokeStyle='rgba(0,0,0,0.1)'; ctx.lineWidth=0.8;
+  for(let xx=-topW/2+6; xx<topW/2; xx+=8){
+    ctx.beginPath(); ctx.moveTo(xx,1); ctx.lineTo(xx*0.65,h-1); ctx.stroke();
+  }
+  // 甲板邊緣高光
+  ctx.strokeStyle='rgba(255,255,255,0.22)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(-topW/2+4,1.5); ctx.lineTo(topW/2-4,1.5); ctx.stroke();
+  // 水線反光
+  ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(-botW/2+2,h-1); ctx.lineTo(botW/2-2,h-1); ctx.stroke();
+}
+// 水中倒影：把船身鏡射到水面下方，並用波紋線打斷邊緣，模擬水面反射被波動打散的樣子
+function drawShipReflection(w,h,color){
+  const topW=w, botW=w*0.62;
+  const t = Date.now()/260;
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  ctx.translate(0, h+2);
+  ctx.scale(1,-0.55);
+  ctx.beginPath();
+  ctx.moveTo(-topW/2,0); ctx.lineTo(topW/2,0);
+  ctx.lineTo(botW/2,h); ctx.lineTo(-botW/2,h);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1;
+  for(let ry=h+4; ry<h+16; ry+=4.5){
+    ctx.beginPath();
+    for(let rx=-topW/2; rx<=topW/2; rx+=6){
+      const yy = ry + Math.sin((rx+t*18)/9)*1.3;
+      if(rx===-topW/2) ctx.moveTo(rx,yy); else ctx.lineTo(rx,yy);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawWaterWake(w){
+  const t = Date.now()/260;
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(w/2+2,2); ctx.quadraticCurveTo(w/2+14,-2,w/2+26,4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-w/2-2,2); ctx.quadraticCurveTo(-w/2-14,-2,-w/2-26,-4); ctx.stroke();
+  // 船側細碎泡沫，隨時間閃動位置，增加水花的真實感
+  ctx.fillStyle='rgba(255,255,255,0.55)';
+  for(let i=0;i<4;i++){
+    const fx = w/2+8+i*6 + Math.sin(t*3+i)*2;
+    const fy = 2 + Math.cos(t*4+i)*2;
+    ctx.beginPath(); ctx.arc(fx,fy,1.3-i*0.15,0,Math.PI*2); ctx.fill();
+    const fx2 = -(w/2+8+i*6) - Math.sin(t*3+i)*2;
+    ctx.beginPath(); ctx.arc(fx2,fy-2,1.3-i*0.15,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawMastSail(color,h,tilt){
+  ctx.save(); if(tilt) ctx.rotate(tilt);
+  // 支索：桅杆拉往船身兩側的細索，讓桅杆看起來有結構支撐
+  ctx.strokeStyle='rgba(93,64,55,0.55)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,-h+4); ctx.lineTo(-9,3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-h+4); ctx.lineTo(12,3); ctx.stroke();
+  ctx.strokeStyle='#5d4037'; ctx.lineWidth=2.4;
+  ctx.beginPath(); ctx.moveTo(0,4); ctx.lineTo(0,-h); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0,-h+2); ctx.quadraticCurveTo(h*0.55,-h*0.5,2,-2);
+  ctx.closePath();
+  const sgrad = ctx.createLinearGradient(0,-h,h*0.5,0);
+  sgrad.addColorStop(0, shadeColor(color,14));
+  sgrad.addColorStop(1, shadeColor(color,-18));
+  ctx.fillStyle=sgrad; ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
+  // 帆布摺線，增加布料的皺褶質感
+  ctx.strokeStyle='rgba(0,0,0,0.15)'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(0,-h*0.75); ctx.quadraticCurveTo(h*0.3,-h*0.5,1,-h*0.2); ctx.stroke();
+  ctx.restore();
+}
+function drawBasicShip(){
+  ctx.strokeStyle='#6d4c41'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(-27,7); ctx.lineTo(-15,-4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(27,7); ctx.lineTo(15,-4); ctx.stroke();
+  drawShipHull(46,15,'#8d6e63');
+  ctx.strokeStyle='#3e2723'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-19); ctx.stroke();
+  ctx.fillStyle='#c62828';
+  ctx.beginPath(); ctx.moveTo(0,-19); ctx.lineTo(12,-15); ctx.lineTo(0,-11); ctx.closePath(); ctx.fill();
+}
+function drawFastShip(){
+  drawShipHull(50,10,'#37474f');
+  ctx.fillStyle='#43a047';
+  ctx.beginPath(); ctx.moveTo(0,-2); ctx.lineTo(10,-13); ctx.lineTo(0,-6); ctx.closePath(); ctx.fill();
+}
+function drawSwordShip(){
+  drawShipHull(56,17,'#5a1a1a');
+  drawMastSail('#8d1f1f',33,0);
+}
+function drawHeavyShip(){
+  ctx.save(); ctx.scale(1.1,1.1);
+  drawShipHull(62,21,'#455a64');
+  ctx.strokeStyle='#263238'; ctx.lineWidth=1.5;
+  for(let i=-24;i<=24;i+=12){ ctx.beginPath(); ctx.moveTo(i,1); ctx.lineTo(i*0.7,19); ctx.stroke(); }
+  ctx.fillStyle='#1a2327';
+  for(let i=-18;i<=18;i+=12){ ctx.beginPath(); ctx.arc(i,10,2.4,0,Math.PI*2); ctx.fill(); }
+  ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=0.6;
+  for(let i=-18;i<=18;i+=12){ ctx.beginPath(); ctx.arc(i,10,2.4,0,Math.PI*2); ctx.stroke(); }
+  ctx.fillStyle='#212121'; ctx.fillRect(-6,-7,26,7);
+  ctx.beginPath(); ctx.arc(-6,-3.5,5,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+function drawBossShip(){
+  ctx.save(); ctx.scale(1.3,1.3);
+  drawShipHull(78,25,'#3e2723');
+  ctx.save(); ctx.translate(-20,0); drawMastSail('#7a1010',30,0.05); ctx.restore();
+  drawMastSail('#b71c1c',42,-0.05);
+  ctx.fillStyle='#eeeeee'; ctx.font='14px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('☠', 4, -44);
+  ctx.restore();
+}
+function drawMedicShip(){
+  drawShipHull(50,15,'#5d4037');
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(-6,-16,12,12);
+  ctx.strokeStyle='#c62828'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(0,-4); ctx.moveTo(-5,-9); ctx.lineTo(5,-9); ctx.stroke();
+}
+function drawArcherShip(){
+  drawShipHull(48,14,'#4e6b3a');
+  drawMastSail('#2e7d32',26,0);
+  ctx.strokeStyle='#a1887f'; ctx.lineWidth=2.2;
+  ctx.beginPath(); ctx.arc(15,-19,7,-1.05,1.05); ctx.stroke();
+  ctx.strokeStyle='#cfd8dc'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(15,-26); ctx.lineTo(15,-12); ctx.stroke();
+}
+function drawShieldShip(){
+  drawShipHull(52,16,'#37474f');
+  ctx.strokeStyle='#263238'; ctx.lineWidth=1.5;
+  for(let i=-20;i<=20;i+=10){ ctx.beginPath(); ctx.moveTo(i,1); ctx.lineTo(i*0.65,15); ctx.stroke(); }
+  ctx.fillStyle='#607d8b';
+  roundRect(-6,-18,12,17,3); ctx.fill();
+  ctx.strokeStyle='#263238'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.fillStyle='#ffd54f'; ctx.beginPath(); ctx.arc(0,-9,2.5,0,Math.PI*2); ctx.fill();
+}
+function drawDiverShip(){
+  drawShipHull(36,9,'#01579b');
+  ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,-7,6,0,Math.PI*2); ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(-16,3); ctx.quadraticCurveTo(-22,-1,-28,2); ctx.stroke();
+}
+function drawFlagShip(){
+  drawShipHull(52,16,'#4a148c');
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2.4;
+  ctx.beginPath(); ctx.moveTo(10,2); ctx.lineTo(10,-32); ctx.stroke();
+  ctx.fillStyle='#ffd54f';
+  ctx.beginPath(); ctx.moveTo(10,-32); ctx.lineTo(28,-25); ctx.lineTo(10,-18); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#4a148c'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('☠', 18, -24);
+}
+function drawMegaboss20Ship(){
+  ctx.save(); ctx.scale(1.12,1.12);
+  ctx.beginPath(); ctx.arc(0,-6,44,0,Math.PI*2);
+  ctx.fillStyle='rgba(186,104,200,0.28)'; ctx.fill();
+  drawBossShip();
+  ctx.font='16px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('🎵', 4, -56);
+  ctx.restore();
+}
+function drawMegaboss40Ship(){
+  ctx.save(); ctx.scale(1.28,1.28);
+  ctx.beginPath(); ctx.arc(0,-6,50,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,23,68,0.3)'; ctx.fill();
+  drawBossShip();
+  ctx.font='18px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('👑', 4, -58);
+  ctx.restore();
+}
+function drawShipSprite(type){
+  switch(type){
+    case 'basic': drawBasicShip(); break;
+    case 'fast': drawFastShip(); break;
+    case 'sword': drawSwordShip(); break;
+    case 'heavy': drawHeavyShip(); break;
+    case 'boss': drawBossShip(); break;
+    case 'medic': drawMedicShip(); break;
+    case 'archer': drawArcherShip(); break;
+    case 'shield': drawShieldShip(); break;
+    case 'diver': drawDiverShip(); break;
+    case 'flag': drawFlagShip(); break;
+    case 'megaboss20': drawMegaboss20Ship(); break;
+    case 'megaboss40': drawMegaboss40Ship(); break;
+    default: drawBasicShip();
+  }
+}
+
+function drawEnemies(){
+  for(const e of G.enemies){
+    if(e.auraBuff){
+      const ay = GRID_Y + e.row*CELL_H + CELL_H/2;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(e.x, ay, e.auraBuff.radius, 0, Math.PI*2);
+      ctx.strokeStyle='rgba(186,104,200,0.35)'; ctx.lineWidth=2; ctx.setLineDash([6,6]);
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.restore();
+    }
+    const y = GRID_Y + e.row*CELL_H + CELL_H/2 + 6;
+    const bob = (e.state==='attacking'||e.state==='ranged') ? Math.sin(Date.now()/70)*2.5 : Math.sin(Date.now()/300 + e.x)*1.5;
+    ctx.save();
+    ctx.translate(e.x, y+bob);
+    ctx.scale(spriteScale, spriteScale);
+    if(e.type==='medic'){
+      drawMedicShip();
+    } else if(e.onShip){
+      ctx.save();
+      ctx.rotate(Math.sin(Date.now()/450 + e.x)*0.03);
+      drawShipSprite(e.type);
+      ctx.restore();
+    } else {
+      drawPirateSprite(e.type);
+    }
+    if(e.frozenTimer>0){
+      ctx.font='20px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('❄️', 0, -30);
+    }
+    if(e.state==='rallying'){
+      ctx.save();
+      const pulse = 0.55+Math.abs(Math.sin(Date.now()/220))*0.45;
+      ctx.globalAlpha = pulse*0.5;
+      ctx.beginPath(); ctx.arc(0,-2,26,0,Math.PI*2);
+      ctx.fillStyle = '#4fc3f7'; ctx.fill();
+      ctx.globalAlpha = pulse;
+      ctx.font='18px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🛡️', 0, -34);
+      ctx.restore();
+    } else if(e.chargeActive){
+      ctx.strokeStyle='rgba(255,171,64,0.7)'; ctx.lineWidth=2;
+      for(let k=0;k<2;k++){ ctx.beginPath(); ctx.moveTo(20+k*6,-4+k*8); ctx.lineTo(32+k*6,-4+k*8); ctx.stroke(); }
+    }
+    ctx.restore();
+    const curHp = e.onShip ? e.shipHp : e.hp;
+    const curMax = e.onShip ? e.shipMaxHp : e.maxHp;
+    const w=50*spriteScale, h=Math.max(4,7*spriteScale), x=e.x-w/2, ytop=y-46*spriteScale;
+    ctx.fillStyle='#1a2f42'; ctx.fillRect(x,ytop,w,h);
+    ctx.fillStyle = e.onShip ? '#4fc3f7' : (curHp/curMax>0.4? '#e53935':'#ffca28');
+    ctx.fillRect(x,ytop,w*Math.max(0,curHp/curMax),h);
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.strokeRect(x,ytop,w,h);
+    if(e.shieldMax>0 && e.shield>0){
+      const shW = w, shH = Math.max(3,4*spriteScale);
+      ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillRect(x,ytop-shH-2,shW,shH);
+      ctx.fillStyle='#80d8ff'; ctx.fillRect(x,ytop-shH-2,shW*(e.shield/e.shieldMax),shH);
+    }
+    ctx.fillStyle='#fff'; ctx.font=Math.max(9,Math.round(11*spriteScale))+'px sans-serif'; ctx.textAlign='center';
+    let label = e.name + (e.onShip?'（船）':'');
+    if(e.state==='rallying') label += (e.attackingTower ? '·架盾陣地(對轟中)' : '·架盾建立陣地');
+    ctx.fillText(label, e.x, ytop-6*spriteScale - (e.shieldMax>0&&e.shield>0?8*spriteScale:0));
+  }
+}
+
+// ============ 子彈外觀 ============
+function drawBulletBasic(){
+  ctx.beginPath();
+  ctx.moveTo(-7,0); ctx.lineTo(2,-2.2); ctx.lineTo(2,2.2); ctx.closePath();
+  ctx.fillStyle = '#fff9c4'; ctx.fill();
+  ctx.strokeStyle='rgba(255,241,118,0.55)'; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(2,0); ctx.lineTo(9,0); ctx.stroke();
+}
+function drawCannonball(){
+  ctx.strokeStyle='rgba(120,120,120,0.35)'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(6,0); ctx.lineTo(15,0); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2);
+  ctx.fillStyle='#2b2b2b'; ctx.fill();
+  ctx.strokeStyle='#111'; ctx.lineWidth=1; ctx.stroke();
+  ctx.beginPath(); ctx.arc(-2,-2,2,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.fill();
+}
+function drawBranchProjectile(cfg){
+  if(cfg.branch==='P'){
+    ctx.save();
+    ctx.shadowColor='#fff59d'; ctx.shadowBlur=8;
+    ctx.strokeStyle='rgba(255,241,118,0.95)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(-18,0); ctx.lineTo(9,0); ctx.stroke();
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(-18,0,2.6,0,Math.PI*2);
+    ctx.fillStyle='#ffffff'; ctx.fill();
+  } else if(cfg.branch==='C'){
+    ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2);
+    ctx.fillStyle='#81d4fa'; ctx.fill();
+    ctx.strokeStyle='#e1f5fe'; ctx.lineWidth=1.5; ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2);
+    ctx.fillStyle='#ff7043'; ctx.fill();
+    ctx.strokeStyle='#3e2723'; ctx.lineWidth=1; ctx.stroke();
+  }
+}
+function drawBeam(p){
+  ctx.save();
+  ctx.strokeStyle = p.color||'#fff';
+  ctx.globalAlpha = Math.max(0, p.life/0.16);
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(p.fromX, p.fromY);
+  for(const h of p.hits){ ctx.lineTo(h.x, GRID_Y+h.row*CELL_H+CELL_H/2); }
+  ctx.stroke();
+  ctx.restore();
+}
+function drawProjectiles(){
+  for(const p of G.projectiles){
+    if(p.beam){ drawBeam(p); continue; }
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate((p.angle||Math.PI) - Math.PI);
+    if(p.nodeKey==='T0') drawBulletBasic();
+    else if(p.nodeKey==='T1') drawCannonball();
+    else drawBranchProjectile(NODES[p.nodeKey]);
+    ctx.restore();
+  }
+}
+
+const COIN_HIT_RADIUS = 42; // 原本30，放大方便手機觸控點中
+function drawCoins(){
+  for(const c of G.coins){
+    ctx.save();
+    ctx.font='42px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    const bounce = Math.sin(Date.now()/150 + c.x)*2;
+    ctx.fillText('💰', c.x, c.y+bounce);
+    ctx.restore();
+  }
+}
+
+function drawFloats(){
+  for(const f of G.floats){
+    ctx.save();
+    ctx.globalAlpha = clamp(f.life/1.1,0,1);
+    ctx.font='bold 16px sans-serif'; ctx.textAlign='center';
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.restore();
+  }
+}
+
+function drawPlacementPreview(){
+  if(!G.placing) return;
+  const cell = cellFromPoint(G.hover.x, G.hover.y);
+  if(!cell) return;
+  const seaBlocked = isSeaCell(cell.row,cell.col);
+  const occupied = !!getTowerAt(cell.row,cell.col) || seaBlocked;
+  const c = cellCenter(cell.row,cell.col);
+  if(!occupied) drawFan(c, NODES.T0, '#8d6e63');
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.beginPath(); ctx.arc(c.x,c.y,30*spriteScale,0,Math.PI*2);
+  ctx.fillStyle = (occupied || G.gold<TOWER_COST) ? '#e53935' : '#66bb6a';
+  ctx.fill();
+  ctx.font=Math.round(30*spriteScale)+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.globalAlpha=0.9;
+  ctx.fillText(NODES.T0.emoji, c.x, c.y);
+  if(seaBlocked){
+    ctx.font='bold 12px sans-serif'; ctx.fillStyle='#ffe0e0';
+    ctx.fillText('🌊 無法在海上建造', c.x, c.y+44*spriteScale);
+  }
+  ctx.restore();
+}
+
+let shopBuyRect = {x:0,y:0,w:0,h:0};
+let heroAbilityRects = { a:{x:0,y:0,w:0,h:0}, b:{x:0,y:0,w:0,h:0} };
+let heroShopBtnRect = {x:0,y:0,w:0,h:0};
+function drawShopBar(){
+  const y0 = GRID_Y + ROWS*CELL_H + 6;
+  const barH = CANVAS_H - y0;
+  const s = clamp(SHOP_BAR_H/100, 0.6, 1.2);
+  ctx.fillStyle = '#20344a';
+  ctx.fillRect(0,y0,CANVAS_W,barH);
+
+  // ===== 左側：堡壘耐久度，貼齊城牆位置(左指區域上方就是城牆本體) =====
+  const hpBarX = Math.round(16*s), hpBarW = Math.round(150*s), hpBarH = Math.round(16*s);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#a9c6e8'; ctx.font=Math.round(12*s)+'px sans-serif';
+  ctx.fillText('堡壘耐久度', hpBarX, y0+Math.round(barH*0.24));
+  const hpBarY = y0 + Math.round(barH*0.34);
+  ctx.fillStyle = '#1a2f42'; ctx.fillRect(hpBarX,hpBarY,hpBarW,hpBarH);
+  const hpRatio = clamp(G.baseHP/G.baseMaxHP, 0, 1);
+  ctx.fillStyle = hpRatio>0.5?'#66bb6a':hpRatio>0.25?'#ffa726':'#e53935';
+  ctx.fillRect(hpBarX,hpBarY,hpBarW*hpRatio,hpBarH);
+  ctx.strokeStyle='#0e2a44'; ctx.strokeRect(hpBarX,hpBarY,hpBarW,hpBarH);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#eaf2fb'; ctx.font='bold '+Math.round(10*s)+'px sans-serif';
+  ctx.fillText(Math.max(0,Math.ceil(G.baseHP))+' / '+G.baseMaxHP, hpBarX+hpBarW/2, hpBarY+hpBarH/2+1);
+
+  // ===== 正中：暫停／選單／加速，放大置中(拇指偶爾伸過去戳一下即可) =====
+  const btnH = Math.round(40*s);
+  const pauseBtnW = Math.round(52*s), menuBtnW = Math.round(56*s), speedBtnW = Math.round(60*s);
+  const midGap = Math.round(10*s);
+  const midTotalW = pauseBtnW+midGap+menuBtnW+midGap+speedBtnW;
+  const midStartX = Math.round(CANVAS_W/2 - midTotalW/2);
+  const midY = y0 + Math.round(barH*0.5) - btnH/2;
+  const pauseBtnX = midStartX;
+  const menuBtnX = pauseBtnX + pauseBtnW + midGap;
+  const speedBtnX = menuBtnX + menuBtnW + midGap;
+  drawButton(pauseBtnX, midY, pauseBtnW, btnH, G.paused?'▶':'⏸', '#37474f', Math.round(18*s));
+  drawButton(menuBtnX, midY, menuBtnW, btnH, '☰', '#37474f', Math.round(18*s));
+  drawButton(speedBtnX, midY, speedBtnW, btnH, G.speedMul===2?'x2':'x1', '#2e5a3e', Math.round(15*s));
+  hudRects.pause = {x:pauseBtnX, y:midY, w:pauseBtnW, h:btnH};
+  hudRects.menu = {x:menuBtnX, y:midY, w:menuBtnW, h:btnH};
+  hudRects.speed = {x:speedBtnX, y:midY, w:speedBtnW, h:btnH};
+
+  // ===== 右下：購買新兵砲／技能a・b／技能商店，全部集中在右指固定區、放大尺寸 =====
+  const iconSize = Math.round(barH*0.6);
+  const buyW = Math.round(96*s);
+  const shopBtnW = Math.round(96*s);
+  const rGap = Math.round(10*s);
+  const rightPad = Math.round(16*s);
+  const rightTotalW = buyW + rGap + iconSize + rGap + iconSize + rGap + shopBtnW;
+  let rx = CANVAS_W - rightTotalW - rightPad;
+  const ry = y0 + Math.round(barH*0.5) - iconSize/2;
+
+  const canBuy = G.gold >= TOWER_COST;
+  shopBuyRect = {x:rx,y:ry,w:buyW,h:iconSize};
+  ctx.save();
+  roundRect(rx,ry,buyW,iconSize,10);
+  ctx.fillStyle = G.placing ? '#ffb300' : (canBuy? '#2e7d32' : '#4a4a4a');
+  ctx.fill();
+  ctx.strokeStyle='#efd9a5'; ctx.lineWidth=2; ctx.stroke();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font=Math.round(iconSize*0.42)+'px sans-serif'; ctx.fillStyle='#fff';
+  ctx.fillText(NODES.T0.emoji, rx+buyW/2, ry+iconSize*0.36);
+  ctx.font='bold '+Math.round(iconSize*0.19)+'px sans-serif'; ctx.fillStyle='#ffe082';
+  ctx.fillText(TOWER_COST+'💰'+(G.placing?'（放置中）':''), rx+buyW/2, ry+iconSize*0.76);
+  ctx.restore();
+  rx += buyW + rGap;
+
+  const activeClass = G.hero.finalClass || G.hero.baseClass;
+  ['a','b'].forEach((slot)=>{
+    const ix = rx;
+    const unlocked = !!activeClass && G.hero.abilityLevel[slot]>0;
+    ctx.save();
+    roundRect(ix,ry,iconSize,iconSize,10);
+    ctx.fillStyle = unlocked ? '#37474f' : '#2a2a2a';
+    ctx.fill();
+    ctx.strokeStyle='#efd9a5'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    if(unlocked){
+      const def = ABILITIES[activeClass][slot];
+      ctx.font=Math.round(iconSize*0.48)+'px sans-serif'; ctx.fillStyle='#fff';
+      ctx.fillText(def.emoji, ix+iconSize/2, ry+iconSize/2);
+      const cd = G.hero.abilityCd[slot];
+      if(cd>0){
+        ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(ix,ry,iconSize,iconSize);
+        ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(iconSize*0.3)+'px sans-serif';
+        ctx.fillText(Math.ceil(cd), ix+iconSize/2, ry+iconSize/2);
+      }
+    } else {
+      ctx.font=Math.round(iconSize*0.38)+'px sans-serif'; ctx.fillStyle='#777';
+      ctx.fillText('🔒', ix+iconSize/2, ry+iconSize/2);
+    }
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.font='bold '+Math.round(iconSize*0.22)+'px sans-serif'; ctx.fillStyle='#ffe082';
+    ctx.fillText(slot==='a' ? 'A' : 'S', ix+3, ry+2);
+    ctx.restore();
+    heroAbilityRects[slot] = { x:ix, y:ry, w:iconSize, h:iconSize };
+    rx += iconSize + rGap;
+  });
+
+  const shopBtnX = rx;
+  drawButton(shopBtnX, ry, shopBtnW, iconSize, '🎖️技能(D)', '#5d4037', Math.round(12*s));
+  heroShopBtnRect = { x:shopBtnX, y:ry, w:shopBtnW, h:iconSize };
+
+  // ===== 中間偏左空隙：合成提示文字(空間不夠時自動隱藏，不硬擠) =====
+  const infoX = hpBarX + hpBarW + Math.round(28*s);
+  const infoMaxX = midStartX - Math.round(20*s);
+  if(infoMaxX - infoX > 150*s){
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.font='bold '+Math.round(12*s)+'px sans-serif'; ctx.fillStyle='#ffd54f';
+    ctx.fillText('加農砲後可選 💣爆破／🎯精準／❄️控制', infoX, y0+barH*0.3);
+    ctx.font=Math.round(10*s)+'px sans-serif'; ctx.fillStyle='#a9c6e8';
+    ctx.fillText('兩座「完全同型」的塔即可合成升級', infoX, y0+barH*0.56);
+  }
+}
+
+function drawSelectionHint(){
+  if(!G.selected) return;
+  ctx.save();
+  ctx.font='14px sans-serif'; ctx.fillStyle='#ffee58'; ctx.textAlign='left';
+  ctx.fillText('已選取砲塔（顯示攻擊範圍）：點另一座「完全同型」砲塔即可合成升級（再點自己可取消）', GRID_X, GRID_Y-20);
+  ctx.restore();
+}
+
+let mergeChoiceRects = [];
+function drawMergeChoiceOverlay(){
+  if(!G.pendingMerge) return;
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.72)';
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.textAlign='center';
+  ctx.fillStyle='#ffd54f'; ctx.font='bold 26px sans-serif';
+  ctx.fillText('選擇升級路線', CANVAS_W/2, CANVAS_H/2-120);
+  const opts = G.pendingMerge.options;
+  const cardW=180, cardH=140, gap=20;
+  const totalW = opts.length*cardW+(opts.length-1)*gap;
+  const startX = CANVAS_W/2 - totalW/2;
+  const y = CANVAS_H/2-70;
+  mergeChoiceRects = [];
+  opts.forEach((key,idx)=>{
+    const node = NODES[key];
+    const x = startX+idx*(cardW+gap);
+    ctx.save();
+    roundRect(x,y,cardW,cardH,12);
+    ctx.fillStyle = branchColor(node.branch);
+    ctx.fill();
+    ctx.strokeStyle='#ffe0b2'; ctx.lineWidth=2; ctx.stroke();
+    ctx.font='40px sans-serif'; ctx.fillStyle='#fff';
+    ctx.fillText(node.emoji, x+cardW/2, y+46);
+    ctx.font='bold 15px sans-serif';
+    ctx.fillText(node.name, x+cardW/2, y+78);
+    ctx.font='12px sans-serif'; ctx.fillStyle='#fff3e0';
+    ctx.fillText(briefStat(node), x+cardW/2, y+100);
+    ctx.restore();
+    mergeChoiceRects.push({x,y,w:cardW,h:cardH,key});
+  });
+  ctx.restore();
+}
+
+let heroChoiceRects = [];
+function drawHeroClassChoiceOverlay(){
+  if(!G.pendingHeroClass) return;
+  const isBase = G.pendingHeroClass==='base';
+  const opts = isBase ? ['warrior','ranger','mage'] : Object.keys(HERO_TREE).filter(k=>HERO_TREE[k].family===G.hero.baseClass);
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.75)';
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.textAlign='center';
+  ctx.fillStyle='#ffd54f'; ctx.font='bold 26px sans-serif';
+  ctx.fillText(isBase ? '英雄 Lv.5 － 選擇主職業' : '英雄 Lv.10 － 選擇最終職業', CANVAS_W/2, CANVAS_H/2-120);
+  const cardW=180, cardH=150, gap=24;
+  const totalW = opts.length*cardW+(opts.length-1)*gap;
+  const startX = CANVAS_W/2 - totalW/2;
+  const y = CANVAS_H/2-70;
+  heroChoiceRects = [];
+  opts.forEach((key,idx)=>{
+    const info = HERO_TREE[key];
+    const x = startX+idx*(cardW+gap);
+    ctx.save();
+    roundRect(x,y,cardW,cardH,12);
+    ctx.fillStyle = info.color;
+    ctx.fill();
+    ctx.strokeStyle='#ffe0b2'; ctx.lineWidth=2; ctx.stroke();
+    ctx.font='42px sans-serif'; ctx.fillStyle='#fff';
+    ctx.fillText(info.emoji, x+cardW/2, y+48);
+    ctx.font='bold 16px sans-serif';
+    ctx.fillText(info.name, x+cardW/2, y+82);
+    ctx.font='12px sans-serif'; ctx.fillStyle='#fff3e0';
+    const stats = isBase ? HERO_FAMILY_STATS[key] : null;
+    if(stats){
+      ctx.fillText('自動攻擊射程'+stats.range, x+cardW/2, y+100);
+    }
+    const abilA = ABILITIES[key].a, abilB = ABILITIES[key].b;
+    ctx.fillText(abilA.name+' ／ '+abilB.name, x+cardW/2, y+(stats?122:106));
+    ctx.restore();
+    heroChoiceRects.push({x,y,w:cardW,h:cardH,key});
+  });
+  ctx.restore();
+}
+
+let heroShopRects = [];
+let heroShopCloseRect = {x:0,y:0,w:0,h:0};
+function drawHeroShopOverlay(){
+  if(!G.showHeroShop) return;
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.75)';
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  const w = Math.min(620, CANVAS_W-80), h = Math.min(420, CANVAS_H-80);
+  const x = (CANVAS_W-w)/2, y = (CANVAS_H-h)/2;
+  roundRect(x,y,w,h,14);
+  ctx.fillStyle='#132a3e'; ctx.fill();
+  ctx.strokeStyle='#ffd54f'; ctx.lineWidth=2; ctx.stroke();
+  ctx.textAlign='center'; ctx.fillStyle='#ffd54f'; ctx.font='bold 22px sans-serif';
+  ctx.fillText('🎖️ 英雄技能', CANVAS_W/2, y+36);
+
+  heroShopRects = [];
+  const shopActiveClass = G.hero.finalClass || G.hero.baseClass;
+  if(!shopActiveClass){
+    ctx.fillStyle='#dce8f5'; ctx.font='15px sans-serif';
+    ctx.fillText('英雄達到 Lv.5 並選擇主職業後，才能學習專屬技能。', CANVAS_W/2, y+h/2);
+    ctx.fillStyle='#a9c6e8'; ctx.font='13px sans-serif';
+    ctx.fillText('目前等級：Lv.'+G.hero.level+'（累積擊殺 '+G.hero.kills+'）', CANVAS_W/2, y+h/2+28);
+  } else {
+    ['a','b'].forEach((slot,idx)=>{
+      const def = ABILITIES[shopActiveClass][slot];
+      const lvl = G.hero.abilityLevel[slot];
+      const cardY = y + 70 + idx*140;
+      roundRect(x+30, cardY, w-60, 120, 10);
+      ctx.fillStyle='#1c3a52'; ctx.fill();
+      ctx.strokeStyle='#3d5a75'; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.textAlign='left';
+      ctx.font='28px sans-serif'; ctx.fillStyle='#fff';
+      ctx.fillText(def.emoji, x+46, cardY+42);
+      ctx.font='bold 16px sans-serif'; ctx.fillStyle='#ffd54f';
+      ctx.fillText(def.name+'　Lv.'+lvl+'/3', x+90, cardY+34);
+      ctx.font='12px sans-serif'; ctx.fillStyle='#cfe3f5';
+      const curMag = lvl>0 ? JSON.stringify(def.mags[lvl-1]).replace(/[{}"]/g,'').replace(/,/g,'／') : '尚未學習';
+      ctx.fillText('目前效果：'+curMag, x+90, cardY+58);
+      const btnW=120, btnH=36, btnX=x+w-60-btnW, btnY=cardY+120-btnH-14;
+      if(lvl>=3){
+        ctx.fillStyle='#4a4a4a';
+        roundRect(btnX,btnY,btnW,btnH,8); ctx.fill();
+        ctx.fillStyle='#bbb'; ctx.textAlign='center'; ctx.font='13px sans-serif';
+        ctx.fillText('已滿級', btnX+btnW/2, btnY+btnH/2+4);
+      } else {
+        const cost = def.costs[lvl];
+        const canAfford = G.gold>=cost;
+        ctx.fillStyle = canAfford ? '#2e7d32' : '#4a4a4a';
+        roundRect(btnX,btnY,btnW,btnH,8); ctx.fill();
+        ctx.strokeStyle='#efd9a5'; ctx.lineWidth=1; ctx.stroke();
+        ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 13px sans-serif';
+        ctx.fillText((lvl===0?'學習':'升級')+' '+cost+'💰', btnX+btnW/2, btnY+btnH/2+4);
+        heroShopRects.push({x:btnX,y:btnY,w:btnW,h:btnH,slot,cost});
+      }
+    });
+  }
+
+  const btnW=100, btnH=32;
+  heroShopCloseRect = { x: CANVAS_W/2-btnW/2, y: y+h-46, w:btnW, h:btnH };
+  drawButton(heroShopCloseRect.x, heroShopCloseRect.y, btnW, btnH, '關閉', '#455a64', 14);
+  ctx.restore();
+}
+
+function drawOverlay(){
+  if(!G.levelComplete && !G.gameOver) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.textAlign='center';
+  if(G.levelComplete){
+    ctx.fillStyle='#ffd54f'; ctx.font='bold 46px sans-serif';
+    ctx.fillText('🏆 關卡勝利！', CANVAS_W/2, CANVAS_H/2-70);
+    ctx.fillStyle='#fff'; ctx.font='18px sans-serif';
+    ctx.fillText('成功擊退第 ' + G.level + ' 關所有海盜！', CANVAS_W/2, CANVAS_H/2-30);
+    if(G.level<MAX_LEVEL){
+      drawButton(CANVAS_W/2-190, CANVAS_H/2+10, 180, 54, '下一關 ▶', '#2e7d32', 18);
+    }
+    drawButton(CANVAS_W/2+10, CANVAS_H/2+10, 180, 54, '返回選單', '#455a64', 18);
+  } else if(G.gameOver){
+    ctx.fillStyle='#ef5350'; ctx.font='bold 46px sans-serif';
+    ctx.fillText('💀 防線失守', CANVAS_W/2, CANVAS_H/2-70);
+    ctx.fillStyle='#fff'; ctx.font='18px sans-serif';
+    ctx.fillText('海盜攻陷了你的堡壘...', CANVAS_W/2, CANVAS_H/2-30);
+    drawButton(CANVAS_W/2-190, CANVAS_H/2+10, 180, 54, '重新挑戰', '#c62828', 18);
+    drawButton(CANVAS_W/2+10, CANVAS_H/2+10, 180, 54, '返回選單', '#455a64', 18);
+  }
+  ctx.restore();
+}
+
+function drawGame(){
+  drawBackground();
+  drawHero();
+  drawTowers();
+  drawEnemies();
+  drawProjectiles();
+  drawHeroFlashes();
+  drawCoins();
+  drawPlacementPreview();
+  drawFloats();
+  drawHUD();
+  drawShopBar();
+  drawSelectionHint();
+  drawOverlay();
+  drawMergeChoiceOverlay();
+  drawHeroClassChoiceOverlay();
+  drawHeroShopOverlay();
+}
+
+// ============ 選單畫面 ============
+function drawMenu(){
+  ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+  const bg = ctx.createLinearGradient(0,0,0,CANVAS_H);
+  bg.addColorStop(0,'#1b4f72'); bg.addColorStop(1,'#0b1f33');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+
+  ctx.textAlign='center';
+  ctx.fillStyle='#ffd54f'; ctx.font='bold 46px sans-serif';
+  ctx.fillText('⚓ 海盜砲塔合成防禦戰 ⚓', CANVAS_W/2, 90);
+  ctx.fillStyle='#cfe3f5'; ctx.font='16px sans-serif';
+  ctx.fillText('放置砲塔、合成升級、擊退海盜艦隊！', CANVAS_W/2, 125);
+
+  const boxW=84, boxH=64, gapX=8, gapY=16;
+  const totalW = 10*boxW + 9*gapX;
+  const startX = (CANVAS_W-totalW)/2;
+  const startY = 168;
+  for(let n=1;n<=MAX_LEVEL;n++){
+    const idx=n-1;
+    const col = idx%10, row = Math.floor(idx/10);
+    const x = startX + col*(boxW+gapX);
+    const y = startY + row*(boxH+gapY);
+    if(col===0){
+      ctx.textAlign='left'; ctx.fillStyle='#7fa8cc'; ctx.font='bold 12px sans-serif';
+      ctx.fillText('系列 '+(row+1)+'：'+MAP_SERIES[row].name, x, y-4);
+    }
+    const unlocked = G.unlocked[n];
+    ctx.save();
+    roundRect(x,y,boxW,boxH,10);
+    ctx.fillStyle = unlocked ? '#2e5a3e' : '#33475a';
+    ctx.fill();
+    ctx.strokeStyle = unlocked ? '#ffd54f' : '#5a7085';
+    ctx.lineWidth=2; ctx.stroke();
+    ctx.font='bold 22px sans-serif'; ctx.fillStyle = unlocked?'#fff':'#8ba0b3';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(unlocked ? String(n) : '🔒', x+boxW/2, y+boxH/2-8);
+    ctx.font='10px sans-serif';
+    ctx.fillText(unlocked ? ('第 '+n+' 關') : '未解鎖', x+boxW/2, y+boxH/2+18);
+    if(n%20===0 && unlocked){
+      ctx.font='16px sans-serif';
+      ctx.fillText('👹', x+boxW-13, y+13);
+    } else if(n%5===0 && unlocked){
+      ctx.font='14px sans-serif';
+      ctx.fillText('👑', x+boxW-12, y+12);
+    }
+    ctx.restore();
+  }
+
+  const infoY = startY + 4*(boxH+gapY) + 14;
+  ctx.textAlign='left'; ctx.fillStyle='#a9c6e8'; ctx.font='13px sans-serif';
+  const lines = [
+    '玩法說明：',
+    '① 點擊「購買新兵砲」再點戰場空格即可放置砲塔（消耗金幣）。',
+    '② 砲塔會自動以扇形範圍攻擊前方海盜；合成加農砲後可選擇 爆破／精準／控制 分支，各分支可再升級一次。',
+    '③ 點選已放置的塔可看到攻擊扇形範圍；點兩座「完全同型」的塔即可合成升級。',
+    '④ 部分海盜有特殊機制：弓箭手遠距離打塔、鐵盾兵有護盾、潛水海盜要靠濺射/控制才打得到、醫療船持續回血、掌旗官替周圍友軍加攻速/移速。',
+    '⑤ 海盜登陸後不會馬上衝：會先在灘頭架盾集結(此時傷害減免、還有機率完全閃避)，湊到足夠人數(或等太久)才會一起發動「衝鋒」，衝鋒時攻速/移速提升。',
+    '⑥ 每關地形不同：右側海域寬窄不一，海盜會搭船渡海；擊沉船後海盜有機率溺死，也可能泅水上岸繼續進攻。每隔幾波會有「猛攻波」大量湧入。',
+    '⑦ 全 40 關分成 4 個系列地圖(每10關一組，畫風不同)；每 5 關一隻船長👑，每 20 關(20/40)一隻魔王👹，帶有專屬技能。',
+    '⑧ 城牆上的主角會自動攻擊，全場擊殺數會讓他升級：Lv5選主職業(戰士/弓手/法師)即可開始在商店列用金幣學習/升級2個主動技能，Lv10再選最終職業讓技能覺醒更強。',
+    '⑨ 阻止海盜抵達左側堡壘，堡壘耐久歸零即挑戰失敗！',
+    '⑩ 鍵盤熱鍵(桌機)：F 購買新兵砲、A／S 施放英雄技能a／b、D 開關英雄技能商店。'
+  ];
+  lines.forEach((l,i)=> ctx.fillText(l, GRID_X, infoY + i*19));
+
+  // 版本號 + 更新紀錄按鈕
+  ctx.textAlign='right'; ctx.fillStyle='#5d7fa0'; ctx.font='12px sans-serif';
+  ctx.fillText(GAME_VERSION, CANVAS_W-16, CANVAS_H-14);
+  const clW=100, clH=28, clX=CANVAS_W-16-clW, clY=CANVAS_H-46;
+  changelogBtnRect = {x:clX,y:clY,w:clW,h:clH};
+  drawButton(clX,clY,clW,clH,'📜 更新紀錄','#2e4a63',12);
+
+  if(G.showChangelog) drawChangelogOverlay();
+}
+
+let changelogBtnRect = {x:0,y:0,w:0,h:0};
+let changelogCloseRect = {x:0,y:0,w:0,h:0};
+function drawChangelogOverlay(){
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.78)';
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  const w = Math.min(720, CANVAS_W-80), h = Math.min(460, CANVAS_H-80);
+  const x = (CANVAS_W-w)/2, y = (CANVAS_H-h)/2;
+  roundRect(x,y,w,h,14);
+  ctx.fillStyle='#132a3e'; ctx.fill();
+  ctx.strokeStyle='#ffd54f'; ctx.lineWidth=2; ctx.stroke();
+
+  ctx.textAlign='center'; ctx.fillStyle='#ffd54f'; ctx.font='bold 22px sans-serif';
+  ctx.fillText('📜 更新紀錄　'+GAME_VERSION, CANVAS_W/2, y+34);
+
+  ctx.textAlign='left'; ctx.font='13px sans-serif';
+  let ty = y+66;
+  const maxWidth = w-56;
+  CHANGELOG.forEach(entry=>{
+    ctx.fillStyle='#ffd54f'; ctx.font='bold 14px sans-serif';
+    ctx.fillText(entry.v, x+28, ty);
+    ctx.fillStyle='#dce8f5'; ctx.font='13px sans-serif';
+    const wrapped = wrapText(entry.note, maxWidth-60);
+    wrapped.forEach((line,li)=>{ ctx.fillText(line, x+80, ty + li*18); });
+    ty += 18*wrapped.length + 14;
+  });
+
+  const btnW=100, btnH=32;
+  changelogCloseRect = { x: x+w/2-btnW/2, y: y+h-46, w:btnW, h:btnH };
+  drawButton(changelogCloseRect.x, changelogCloseRect.y, btnW, btnH, '關閉', '#455a64', 14);
+  ctx.restore();
+}
+function wrapText(text, maxWidth){
+  const lines = [];
+  let cur = '';
+  for(const ch of text){
+    const test = cur+ch;
+    if(ctx.measureText(test).width > maxWidth && cur.length>0){
+      lines.push(cur); cur = ch;
+    } else {
+      cur = test;
+    }
+  }
+  if(cur) lines.push(cur);
+  return lines;
+}
+
+// ============ 事件座標換算 ============
+function getPos(evt){
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
+  const cx = (evt.touches && evt.touches.length) ? evt.touches[0].clientX : evt.clientX;
+  const cy = (evt.touches && evt.touches.length) ? evt.touches[0].clientY : evt.clientY;
+  return { x:(cx-rect.left)*scaleX, y:(cy-rect.top)*scaleY };
+}
+
+function inRect(x,y,rx,ry,rw,rh){ return x>=rx && x<=rx+rw && y>=ry && y<=ry+rh; }
+
+function handleMenuClick(x,y){
+  if(G.showChangelog){
+    if(inRect(x,y,changelogCloseRect.x,changelogCloseRect.y,changelogCloseRect.w,changelogCloseRect.h)){
+      G.showChangelog = false;
+    }
+    return;
+  }
+  if(inRect(x,y,changelogBtnRect.x,changelogBtnRect.y,changelogBtnRect.w,changelogBtnRect.h)){
+    G.showChangelog = true;
+    return;
+  }
+  const boxW=84, boxH=64, gapX=8, gapY=16;
+  const totalW = 10*boxW + 9*gapX;
+  const startX = (CANVAS_W-totalW)/2;
+  const startY = 168;
+  for(let n=1;n<=MAX_LEVEL;n++){
+    const idx=n-1;
+    const col = idx%10, row = Math.floor(idx/10);
+    const bx = startX + col*(boxW+gapX);
+    const by = startY + row*(boxH+gapY);
+    if(inRect(x,y,bx,by,boxW,boxH) && G.unlocked[n]){
+      AudioSys.sfx.uiClick();
+      startLevel(n);
+      return;
+    }
+  }
+}
+
+function applyUpgrade(tower, key){
+  const n = NODES[key];
+  tower.key = key;
+  tower.maxHp = n.hp;
+  tower.hp = n.maxHp !== undefined ? n.hp : n.hp;
+  tower.hp = n.hp;
+  tower.cooldown = 0.2;
+  const c = cellCenter(tower.row, tower.col);
+  spawnFloat(c.x, c.y-40, '合成！'+n.name, '#66ffcc');
+}
+
+function handleMergeChoiceClick(x,y){
+  for(const r of mergeChoiceRects){
+    if(inRect(x,y,r.x,r.y,r.w,r.h)){
+      applyUpgrade(G.pendingMerge.tower, r.key);
+      G.pendingMerge = null;
+      AudioSys.sfx.towerUpgrade();
+      return;
+    }
+  }
+}
+
+function handleHeroClassChoiceClick(x,y){
+  for(const r of heroChoiceRects){
+    if(inRect(x,y,r.x,r.y,r.w,r.h)){
+      const pos = heroPos();
+      if(G.pendingHeroClass==='base'){
+        G.hero.baseClass = r.key;
+        spawnFloat(pos.x, pos.y-70, '轉職：'+HERO_TREE[r.key].name+'！', '#ffd54f');
+      } else {
+        G.hero.finalClass = r.key;
+        spawnFloat(pos.x, pos.y-70, '覺醒：'+HERO_TREE[r.key].name+'！', '#ffd54f');
+      }
+      G.pendingHeroClass = null;
+      AudioSys.sfx.towerUpgrade();
+      return;
+    }
+  }
+}
+
+function handleHeroShopClick(x,y){
+  if(inRect(x,y,heroShopCloseRect.x,heroShopCloseRect.y,heroShopCloseRect.w,heroShopCloseRect.h)){
+    G.showHeroShop = false;
+    return;
+  }
+  for(const r of heroShopRects){
+    if(inRect(x,y,r.x,r.y,r.w,r.h) && G.gold>=r.cost){
+      G.gold -= r.cost;
+      G.hero.abilityLevel[r.slot]++;
+      AudioSys.sfx.towerUpgrade();
+      return;
+    }
+  }
+}
+
+function handlePlayingClick(x,y){
+  if(G.pendingHeroClass){ handleHeroClassChoiceClick(x,y); return; }
+  if(G.pendingMerge){ handleMergeChoiceClick(x,y); return; }
+  if(G.showHeroShop){ handleHeroShopClick(x,y); return; }
+
+  if(G.levelComplete || G.gameOver){
+    const cx = CANVAS_W/2;
+    if(G.levelComplete && G.level<MAX_LEVEL && inRect(x,y,cx-190,CANVAS_H/2+10,180,54)){
+      AudioSys.sfx.uiClick(); startLevel(G.level+1); return;
+    }
+    const menuBtnX = G.levelComplete ? cx+10 : cx+10;
+    if(inRect(x,y,menuBtnX,CANVAS_H/2+10,180,54)){ AudioSys.sfx.uiClick(); G.screen='menu'; return; }
+    if(G.gameOver && inRect(x,y,cx-190,CANVAS_H/2+10,180,54)){
+      AudioSys.sfx.uiClick(); startLevel(G.level); return;
+    }
+    return;
+  }
+
+  if(inRect(x,y,hudRects.pause.x,hudRects.pause.y,hudRects.pause.w,hudRects.pause.h)){ G.paused = !G.paused; AudioSys.sfx.uiClick(); return; }
+  if(inRect(x,y,hudRects.menu.x,hudRects.menu.y,hudRects.menu.w,hudRects.menu.h)){ G.screen='menu'; AudioSys.sfx.uiClick(); return; }
+  if(inRect(x,y,hudRects.speed.x,hudRects.speed.y,hudRects.speed.w,hudRects.speed.h)){ G.speedMul = G.speedMul===1?2:1; AudioSys.sfx.uiClick(); return; }
+
+  if(inRect(x,y,heroAbilityRects.a.x,heroAbilityRects.a.y,heroAbilityRects.a.w,heroAbilityRects.a.h)){ castAbility('a'); return; }
+  if(inRect(x,y,heroAbilityRects.b.x,heroAbilityRects.b.y,heroAbilityRects.b.w,heroAbilityRects.b.h)){ castAbility('b'); return; }
+  if(inRect(x,y,heroShopBtnRect.x,heroShopBtnRect.y,heroShopBtnRect.w,heroShopBtnRect.h)){ G.showHeroShop = true; AudioSys.sfx.uiClick(); return; }
+
+  if(G.paused) return;
+
+  for(let i=G.coins.length-1;i>=0;i--){
+    const c = G.coins[i];
+    const dx=x-c.x, dy=y-c.y;
+    if(dx*dx+dy*dy <= COIN_HIT_RADIUS*COIN_HIT_RADIUS){
+      G.gold += c.value;
+      spawnFloat(c.x,c.y,'+'+c.value,'#ffd54f');
+      G.coins.splice(i,1);
+      AudioSys.sfx.coinPickup();
+      return;
+    }
+  }
+
+  if(inRect(x,y,shopBuyRect.x,shopBuyRect.y,shopBuyRect.w,shopBuyRect.h)){
+    if(G.gold >= TOWER_COST){ G.placing = !G.placing; G.selected=null; AudioSys.sfx.uiClick(); }
+    return;
+  }
+
+  const cell = cellFromPoint(x,y);
+  if(cell){
+    if(G.placing){
+      if(!getTowerAt(cell.row,cell.col) && !isSeaCell(cell.row,cell.col) && G.gold>=TOWER_COST){
+        G.gold -= TOWER_COST;
+        G.towers.push({ row:cell.row, col:cell.col, key:'T0', hp:NODES.T0.hp, maxHp:NODES.T0.hp, cooldown:0.3, disabledTimer:0 });
+        G.placing = false;
+        AudioSys.sfx.towerPlace();
+      }
+      return;
+    }
+    const tower = getTowerAt(cell.row,cell.col);
+    if(tower){
+      if(!G.selected){ G.selected = { row:cell.row, col:cell.col }; return; }
+      if(G.selected.row===cell.row && G.selected.col===cell.col){ G.selected=null; return; }
+      const t1 = getTowerAt(G.selected.row,G.selected.col);
+      if(t1 && t1.key===tower.key){
+        const node = NODES[t1.key];
+        if(node.next.length===0){
+          const c = cellCenter(cell.row,cell.col);
+          spawnFloat(c.x, c.y-40, '已是最高型態！', '#ff8a65');
+          G.selected = null;
+          AudioSys.sfx.towerMaxed();
+        } else if(node.next.length===1){
+          removeTower(t1);
+          applyUpgrade(tower, node.next[0]);
+          G.selected = null;
+          AudioSys.sfx.towerUpgrade();
+        } else {
+          removeTower(t1);
+          G.pendingMerge = { tower, options: node.next };
+          G.selected = null;
+          AudioSys.sfx.uiClick();
+        }
+      } else {
+        G.selected = { row:cell.row, col:cell.col };
+      }
+    } else {
+      G.selected = null;
+    }
+  }
+}
+
+function onClick(evt){
+  evt.preventDefault();
+  AudioSys.ensureCtx();
+  AudioSys.startMusic();
+  const {x,y} = getPos(evt);
+  if(G.screen==='menu') handleMenuClick(x,y);
+  else if(G.screen==='playing') handlePlayingClick(x,y);
+}
+function onMove(evt){
+  const {x,y} = getPos(evt);
+  G.hover.x = x; G.hover.y = y;
+}
+
+canvas.addEventListener('click', onClick);
+canvas.addEventListener('touchstart', onClick, {passive:false});
+canvas.addEventListener('mousemove', onMove);
+canvas.addEventListener('touchmove', onMove, {passive:false});
+
+// ============ 鍵盤熱鍵(桌機加速操作用) ============
+// F：購買新兵砲（等同點擊購買按鈕，再點戰場放置）
+// A／S：施放英雄技能 a／b（左手 home row，達到 Lv5 選定主職業後即可使用）
+// D：開關英雄技能商店面板
+function onKeyDown(evt){
+  if(G.screen !== 'playing') return;
+  if(evt.repeat) return;
+  const tag = (evt.target && evt.target.tagName) || '';
+  if(tag==='INPUT' || tag==='TEXTAREA') return;
+  const key = evt.key.toLowerCase();
+  if(key !== 'f' && key !== 'a' && key !== 's' && key !== 'd') return;
+  evt.preventDefault();
+
+  if(key==='f'){
+    if(G.pendingHeroClass || G.pendingMerge || G.showHeroShop || G.paused || G.levelComplete || G.gameOver) return;
+    if(G.gold >= TOWER_COST){ G.placing = !G.placing; G.selected = null; }
+    return;
+  }
+  if(key==='d'){
+    if(G.pendingHeroClass || G.pendingMerge) return;
+    G.showHeroShop = !G.showHeroShop;
+    return;
+  }
+  if(G.pendingHeroClass || G.pendingMerge || G.showHeroShop) return;
+  if(key==='a'){ castAbility('a'); return; }
+  if(key==='s'){ castAbility('b'); return; }
+}
+window.addEventListener('keydown', onKeyDown);
+
+// ============ 音效開關按鈕 ============
+const muteBtn = document.getElementById('muteBtn');
+function refreshMuteBtn(){
+  if(muteBtn) muteBtn.textContent = AudioSys.isMuted() ? '🔇' : '🔊';
+}
+if(muteBtn){
+  refreshMuteBtn();
+  const onMuteToggle = function(evt){
+    evt.preventDefault();
+    AudioSys.toggleMuted();
+    AudioSys.startMusic();
+    refreshMuteBtn();
+  };
+  muteBtn.addEventListener('click', onMuteToggle);
+  muteBtn.addEventListener('touchstart', onMuteToggle, {passive:false});
+}
+
+// ============ 全螢幕 + 橫向鎖定 ============
+const fsBtn = document.getElementById('fsBtn');
+async function enterFullscreenLandscape(){
+  const el = document.getElementById('wrap');
+  try{
+    if(el.requestFullscreen) await el.requestFullscreen();
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  }catch(e){ }
+  try{
+    if(screen.orientation && screen.orientation.lock){
+      await screen.orientation.lock('landscape');
+    }
+  }catch(e){ }
+  setTimeout(resizeCanvas, 60);
+}
+if(fsBtn){
+  fsBtn.addEventListener('click', function(evt){ evt.preventDefault(); enterFullscreenLandscape(); });
+  fsBtn.addEventListener('touchstart', function(evt){ evt.preventDefault(); enterFullscreenLandscape(); }, {passive:false});
+}
+document.addEventListener('fullscreenchange', ()=>setTimeout(resizeCanvas,60));
+document.addEventListener('webkitfullscreenchange', ()=>setTimeout(resizeCanvas,60));
+window.addEventListener('resize', ()=>setTimeout(resizeCanvas,60));
+window.addEventListener('orientationchange', ()=>setTimeout(resizeCanvas,200));
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', ()=>setTimeout(resizeCanvas,60));
+}
+resizeCanvas();
+
+// ============ 主迴圈 ============
+let lastTs = 0;
+function loop(ts){
+  const dt = Math.min(0.05, (ts-lastTs)/1000 || 0);
+  lastTs = ts;
+  update(dt);
+  if(G.screen==='menu') drawMenu(); else drawGame();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
