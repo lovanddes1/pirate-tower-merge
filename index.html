@@ -74,7 +74,7 @@
   <button id="fsBtn" type="button">⛶ 全螢幕橫向</button>
   <button id="muteBtn" type="button">🔊</button>
   <canvas id="game"></canvas>
-  <div id="hint">滑鼠點擊操作；手機/平板可用觸控點按<br>建議點左上角「⛶全螢幕橫向」或將手機轉為橫向以獲得最佳畫面<br>鍵盤熱鍵：F 購買新兵砲／A・S 施放英雄技能／D 英雄技能商店</div>
+  <div id="hint">滑鼠點擊操作；手機/平板可用觸控點按<br>建議點左上角「⛶全螢幕橫向」或將手機轉為橫向以獲得最佳畫面<br>鍵盤熱鍵：F 購買新兵砲／A・S・Z・X 施放英雄技能(共4個)／D 英雄技能商店</div>
 </div>
 <script>
 (function(){
@@ -82,8 +82,10 @@
 
 // ============ 版本資訊 / 更新紀錄 ============
 // 每次交付新版本時，在最上面加一筆紀錄（日期為設計討論當下，非實際檔案時間戳）
-const GAME_VERSION = "v0.9.1";
+const GAME_VERSION = "v0.11.0";
 const CHANGELOG = [
+  { v:"0.11.0", note:"新增「運輸船」敵人(第7關起解鎖)：本身不主動作戰、船體厚實，靠岸或被擊沉時會混合卸下最多3台載具，解決後期「塔合成完就不會壞」的問題──①遠程炮車：站得比一般弓箭手更遠，持續轟擊砲塔造成真正有感的傷害，逼玩家投資塔血量/優先集火；②突擊運兵車：速度快、血量厚，被擊毀時會爆出2名散兵繼續突圍，讓「先拆車還是先清兵」變成即時判斷；③護盾指揮車：本身不攻擊，但幫同船載具大幅加成移速與傷害，是優先擊殺的高價值目標。三者皆有專屬美術可一眼辨識。" },
+  { v:"0.10.0", note:"英雄技能大幅擴充與強化！每個職業從2個主動技能增加為4個(a/b/c/d，鍵盤熱鍵A・S・Z・X)，每個主職業與最終職業都新增2個全新技能(旋風斬、破陣衝鋒、多重射擊、鷹眼追擊、閃電鏈、時間扭曲等)；技能商店面板改為2x2卡片版面同時顯示4個技能。全面加入技能特效系統：施放瞬間爆發光環與粒子、命中敵人炸開火花、大招畫面震動，攻擊技能更有打擊爽快感！右下角技能按鈕改為2x2小方陣，維持原本手指操作區域大小。" },
   { v:"0.9.1", note:"上方HUD資訊列文字全面放大：金幣圖示與數字、關卡/波次資訊、英雄等級職業擊殺數，字級明顯加大並加粗，填滿原本偏空的上方橫列空間，資訊更醒目好讀。" },
   { v:"0.9.0", note:"手機觸控雙指分工優化：下方按鈕列重新編排——左側改放堡壘耐久度(貼齊城牆位置，更直覺)，正中集中暫停／選單／加速(放大尺寸)，右下角集中購買新兵砲／英雄技能a・b／技能商店(右指專屬固定區、加大尺寸方便拇指點按)；上方HUD空間改放英雄等級/職業/擊殺數資訊；金幣圖示與點擊判定範圍一併放大。整體讓左指專心負責棋盤(放置/選取/合成)、右指專心負責固定按鈕區，雙指分工更接近桌機「左手鍵盤熱鍵＋右手滑鼠」的操作邏輯。" },
   { v:"0.8.0", note:"新增音樂與音效系統！使用即時合成音效(不需外部音檔)：砲塔開火/命中/擊沉、金幣拾取、砲塔放置與合成升級、英雄技能施放、波次開始(含猛攻警報)、堡壘受擊、關卡勝利/敗北皆有專屬音效；背景加入輕快的海盜風循環配樂。右上角新增🔊按鈕可一鍵靜音/開啟，並會記住你的選擇。" },
@@ -360,6 +362,12 @@ const ENEMY_TYPES = {
   diver: { name:"潛水海盜",   hp:55,  speed:26, landSpeed:18, dmg:10, gold:15, shipMult:1.2, drownChance:0.1, submergeImmune:true },
   medic: { name:"巫毒醫療船", hp:50,  speed:12, dmg:0,  gold:20,  shipMult:1.0, drownChance:0, noLand:true, healPct:0.03, healRadius:170 },
   flag:  { name:"掌旗官",     hp:75,  speed:17, dmg:8,  gold:22,  shipMult:1.4, drownChance:0.3, auraBuff:{ speedMult:1.2, dmgMult:1.25, radius:210 } },
+  // ---- 運輸船載具(第7關後解鎖)：運輸船本身是純粹的「移動貨櫃」，靠岸/被擊沉時依cargoWeights混合卸下下列載具 ----
+  artyCar:   { name:"遠程炮車",   hp:60, speed:15, dmg:34, gold:24, shipMult:1.1, drownChance:0.4,  ranged:true, atkInterval:2.1, atkRangeMult:3.4 },
+  breakerCar:{ name:"突擊運兵車", hp:95, speed:29, dmg:19, gold:18, shipMult:1.2, drownChance:0.35, armor:0.15, deathSpawn:{ type:'basic', count:2 } },
+  shieldCar: { name:"護盾指揮車", hp:70, speed:14, dmg:0,  gold:26, shipMult:1.1, drownChance:0.3,  auraBuff:{ speedMult:1.15, dmgMult:1.35, radius:190 } },
+  gunboat:   { name:"運輸船",     hp:50, speed:13, dmg:6,  gold:16, shipMult:2.3, drownChance:0.2,  troopsPerShip:3,
+             cargoWeights:{ artyCar:3, breakerCar:3, shieldCar:1 } },
   boss:  { name:"海盜船長",   hp:780,  speed:11, dmg:42, gold:130, shipMult:2.2, drownChance:0.15, armor:0.2,
            rageThresholds:[0.5], summonThresholds:[0.7,0.4], summonTypes:['basic'] },
   megaboss20: { name:"深淵海妖", hp:1600, speed:10, dmg:55, gold:320, shipMult:2.4, drownChance:0.1, armor:0.15,
@@ -409,53 +417,85 @@ const HERO_FAMILY_STATS = {
 const ABILITIES = {
   warrior: {
     a: { name:'突擊斬', emoji:'⚔️', costs:[70,130,220], cds:[9,7,5], mags:[{dmg:150},{dmg:220},{dmg:320}] },
-    b: { name:'防禦姿態', emoji:'🛡️', costs:[80,150,250], cds:[18,15,12], mags:[{shieldPct:0.25,dur:4},{shieldPct:0.35,dur:5},{shieldPct:0.45,dur:6}] }
+    b: { name:'防禦姿態', emoji:'🛡️', costs:[80,150,250], cds:[18,15,12], mags:[{shieldPct:0.25,dur:4},{shieldPct:0.35,dur:5},{shieldPct:0.45,dur:6}] },
+    c: { name:'旋風斬', emoji:'🌪️', costs:[90,160,270], cds:[12,10,8], mags:[{radius:150,dmg:110},{radius:170,dmg:160},{radius:190,dmg:230}] },
+    d: { name:'破陣衝鋒', emoji:'💥', costs:[100,180,300], cds:[16,13,10], mags:[{dmg:260,stun:1.2},{dmg:380,stun:1.6},{dmg:540,stun:2.2}] }
   },
   ranger: {
     a: { name:'穿心箭', emoji:'🏹', costs:[70,130,220], cds:[8,6,5], mags:[{dmg:170},{dmg:250},{dmg:360}] },
-    b: { name:'絆索陷阱', emoji:'🪢', costs:[80,150,250], cds:[14,11,9], mags:[{freeze:1.5},{freeze:2},{freeze:2.5}] }
+    b: { name:'絆索陷阱', emoji:'🪢', costs:[80,150,250], cds:[14,11,9], mags:[{freeze:1.5},{freeze:2},{freeze:2.5}] },
+    c: { name:'多重射擊', emoji:'🎯', costs:[90,160,270], cds:[11,9,7], mags:[{dmg:90,maxTargets:3},{dmg:130,maxTargets:4},{dmg:190,maxTargets:5}] },
+    d: { name:'鷹眼追擊', emoji:'🦅', costs:[100,180,300], cds:[18,15,12], mags:[{dmg:80,dps:40,dur:4},{dmg:120,dps:60,dur:5},{dmg:170,dps:90,dur:6}] }
   },
   mage: {
     a: { name:'烈焰彈', emoji:'🔥', costs:[70,130,220], cds:[10,8,6], mags:[{radius:200,dmg:130},{radius:220,dmg:190},{radius:240,dmg:270}] },
-    b: { name:'寒冰迷霧', emoji:'🌫️', costs:[80,150,250], cds:[16,13,10], mags:[{radius:220,slowPct:0.35,dur:3},{radius:240,slowPct:0.45,dur:3.5},{radius:260,slowPct:0.55,dur:4}] }
+    b: { name:'寒冰迷霧', emoji:'🌫️', costs:[80,150,250], cds:[16,13,10], mags:[{radius:220,slowPct:0.35,dur:3},{radius:240,slowPct:0.45,dur:3.5},{radius:260,slowPct:0.55,dur:4}] },
+    c: { name:'閃電鏈', emoji:'⚡', costs:[90,160,270], cds:[10,8,6], mags:[{dmg:120,maxTargets:3},{dmg:170,maxTargets:4},{dmg:240,maxTargets:5}] },
+    d: { name:'時間扭曲', emoji:'⏳', costs:[100,180,300], cds:[20,16,13], mags:[{slowPct:0.5,dur:2.5},{slowPct:0.6,dur:3},{slowPct:0.7,dur:3.5}] }
   },
   paladin: {
     a: { name:'聖光壁壘', emoji:'✨', costs:[80,150,260], cds:[14,12,10], mags:[{stunDur:1.5,shieldPct:0.3},{stunDur:2,shieldPct:0.4},{stunDur:2.5,shieldPct:0.5}] },
-    b: { name:'神聖庇護', emoji:'🕊️', costs:[100,180,300], cds:[26,22,18], mags:[{invulnDur:3,heal:15},{invulnDur:4,heal:25},{invulnDur:5,heal:40}] }
+    b: { name:'神聖庇護', emoji:'🕊️', costs:[100,180,300], cds:[26,22,18], mags:[{invulnDur:3,heal:15},{invulnDur:4,heal:25},{invulnDur:5,heal:40}] },
+    c: { name:'審判之錘', emoji:'🔨', costs:[100,180,300], cds:[14,11,9], mags:[{dmg:320,stun:1.5},{dmg:460,stun:2},{dmg:650,stun:2.5}] },
+    d: { name:'復仇光環', emoji:'🌟', costs:[110,190,320], cds:[22,18,15], mags:[{heal:40,shieldPct:0.2,dur:4},{heal:70,shieldPct:0.3,dur:5},{heal:110,shieldPct:0.4,dur:6}] }
   },
   berserker: {
     a: { name:'血怒橫掃', emoji:'🪓', costs:[80,150,260], cds:[10,8,6], mags:[{dmg:220},{dmg:320},{dmg:460}] },
-    b: { name:'嗜血狂暴', emoji:'💢', costs:[100,180,300], cds:[20,16,12], mags:[{dur:5,mult:2.0},{dur:6,mult:2.5},{dur:8,mult:3.0}] }
+    b: { name:'嗜血狂暴', emoji:'💢', costs:[100,180,300], cds:[20,16,12], mags:[{dur:5,mult:2.0},{dur:6,mult:2.5},{dur:8,mult:3.0}] },
+    c: { name:'大地践踏', emoji:'🌋', costs:[100,180,300], cds:[13,10,8], mags:[{radius:200,dmg:180},{radius:220,dmg:260},{radius:240,dmg:380}] },
+    d: { name:'不屈意志', emoji:'🔱', costs:[120,200,330], cds:[24,20,16], mags:[{invulnDur:2.5,heal:30},{invulnDur:3.5,heal:55},{invulnDur:5,heal:90}] }
   },
   scout: {
     a: { name:'束縛射擊', emoji:'🪤', costs:[70,140,240], cds:[9,7,5], mags:[{freeze:2,dmg:60,bonus:1.5},{freeze:2.5,dmg:90,bonus:1.8},{freeze:3,dmg:130,bonus:2.2}] },
-    b: { name:'陷阱佈置', emoji:'🕸️', costs:[90,160,270], cds:[16,13,10], mags:[{freeze:2},{freeze:2.5},{freeze:3}] }
+    b: { name:'陷阱佈置', emoji:'🕸️', costs:[90,160,270], cds:[16,13,10], mags:[{freeze:2},{freeze:2.5},{freeze:3}] },
+    c: { name:'疾風連射', emoji:'🏹', costs:[90,160,270], cds:[10,8,6], mags:[{dmg:100,maxTargets:3},{dmg:150,maxTargets:4},{dmg:210,maxTargets:5}] },
+    d: { name:'追魂箭', emoji:'🎯', costs:[110,190,320], cds:[20,16,13], mags:[{dmg:300,bonus:1.6},{dmg:430,bonus:1.8},{dmg:600,bonus:2.1}] }
   },
   sniper: {
     a: { name:'破甲狙擊', emoji:'🎯', costs:[80,150,260], cds:[8,6,5], mags:[{dmg:260},{dmg:380},{dmg:540}] },
-    b: { name:'處決', emoji:'💀', costs:[100,180,300], cds:[18,14,11], mags:[{pct:0.25,trueDmg:300},{pct:0.32,trueDmg:450},{pct:0.4,trueDmg:650}] }
+    b: { name:'處決', emoji:'💀', costs:[100,180,300], cds:[18,14,11], mags:[{pct:0.25,trueDmg:300},{pct:0.32,trueDmg:450},{pct:0.4,trueDmg:650}] },
+    c: { name:'穿透彈幕', emoji:'🔫', costs:[100,180,300], cds:[9,7,6], mags:[{dmg:180,maxTargets:3},{dmg:260,maxTargets:4},{dmg:370,maxTargets:5}] },
+    d: { name:'戰術補給', emoji:'🩹', costs:[110,190,320], cds:[22,18,14], mags:[{heal:50,shieldPct:0.25,dur:5},{heal:85,shieldPct:0.35,dur:6},{heal:130,shieldPct:0.45,dur:8}] }
   },
   elementalist: {
     a: { name:'隕石術', emoji:'☄️', costs:[80,150,260], cds:[12,9,7], mags:[{radius:240,dmg:200},{radius:240,dmg:300},{radius:240,dmg:430}] },
-    b: { name:'烈焰印記', emoji:'🔥', costs:[90,160,270], cds:[15,12,9], mags:[{radius:260,dps:30,dur:4},{radius:260,dps:45,dur:5},{radius:260,dps:65,dur:6}] }
+    b: { name:'烈焰印記', emoji:'🔥', costs:[90,160,270], cds:[15,12,9], mags:[{radius:260,dps:30,dur:4},{radius:260,dps:45,dur:5},{radius:260,dps:65,dur:6}] },
+    c: { name:'雷霆風暴', emoji:'⛈️', costs:[100,180,300], cds:[16,13,10], mags:[{radius:260,dps:50,dur:3},{radius:280,dps:75,dur:4},{radius:300,dps:110,dur:5}] },
+    d: { name:'絕對零度', emoji:'❄️', costs:[120,200,330], cds:[22,18,15], mags:[{freeze:2.5},{freeze:3},{freeze:3.5}] }
   },
   warlock: {
     a: { name:'凍結新星', emoji:'❄️', costs:[110,190,320], cds:[20,16,13], mags:[{freeze:2},{freeze:2.5},{freeze:3}] },
-    b: { name:'詛咒印記', emoji:'🌀', costs:[100,180,300], cds:[18,14,11], mags:[{dur:5,dmgMult:0.6,armorRed:0.15},{dur:6,dmgMult:0.5,armorRed:0.25},{dur:8,dmgMult:0.4,armorRed:0.35}] }
+    b: { name:'詛咒印記', emoji:'🌀', costs:[100,180,300], cds:[18,14,11], mags:[{dur:5,dmgMult:0.6,armorRed:0.15},{dur:6,dmgMult:0.5,armorRed:0.25},{dur:8,dmgMult:0.4,armorRed:0.35}] },
+    c: { name:'靈魂汲取', emoji:'🩸', costs:[100,180,300], cds:[14,11,9], mags:[{dmg:150,heal:20},{dmg:220,heal:35},{dmg:320,heal:55}] },
+    d: { name:'混沌新星', emoji:'🌌', costs:[130,210,340], cds:[24,20,16], mags:[{radius:260,dmg:200,curseDur:4},{radius:280,dmg:300,curseDur:5},{radius:300,dmg:430,curseDur:6}] }
   }
+};
+
+const CLASS_COLOR = {
+  warrior:'#ff8a65', ranger:'#81c784', mage:'#64b5f6',
+  paladin:'#ffd54f', berserker:'#ff5252', scout:'#66bb6a',
+  sniper:'#4dd0e1', elementalist:'#ffa726', warlock:'#ba68c8'
 };
 
 // ============ 關卡波次產生 ============
 function weightedPick(pool, n){
-  const w = { basic:5, fast:3, sword:3, heavy:1+Math.floor(n/3), archer:2+Math.floor(n/4), shield:2+Math.floor(n/5), diver:1+Math.floor(n/6), medic:1, flag:1+Math.floor(n/5) };
+  const w = { basic:5, fast:3, sword:3, heavy:1+Math.floor(n/3), archer:2+Math.floor(n/4), shield:2+Math.floor(n/5), diver:1+Math.floor(n/6), medic:1, flag:1+Math.floor(n/5), gunboat:1+Math.floor(n/6) };
   let total=0; const items=[];
   pool.forEach(t=>{ const wt=w[t]||1; total+=wt; items.push([t,wt]); });
   let r = Math.random()*total;
   for(const [t,wt] of items){ if(r<wt) return t; r-=wt; }
   return pool[0];
 }
+// 依運輸船的 cargoWeights 權重，挑選這一個艙位要卸下哪種載具
+function pickCargoType(cargoWeights){
+  let total=0; const items=[];
+  for(const k in cargoWeights){ const wt=cargoWeights[k]; total+=wt; items.push([k,wt]); }
+  let r = Math.random()*total;
+  for(const [t,wt] of items){ if(r<wt) return t; r-=wt; }
+  return items.length ? items[0][0] : 'basic';
+}
 function pickRowFor(type, terrain){
-  if(type==='diver' || type==='medic'){
+  if(type==='diver' || type==='medic' || type==='gunboat'){
     const seaRows=[];
     for(let r=0;r<ROWS;r++) if(terrain[r]>0) seaRows.push(r);
     if(seaRows.length) return seaRows[Math.floor(Math.random()*seaRows.length)];
@@ -493,6 +533,7 @@ function buildLevel(n, terrain){
   };
   let pool = pools[Math.min(n,6)] || ['basic','fast','sword','heavy','archer','shield','flag','diver','medic'];
   if(n>=7 && pool.indexOf('diver')===-1) pool = pool.concat(['diver','medic']);
+  if(n>=7 && pool.indexOf('gunboat')===-1) pool = pool.concat(['gunboat']);
   const waveCount = 3 + Math.ceil(n/2);
   const waves = [];
   for(let w=0; w<waveCount; w++){
@@ -536,6 +577,7 @@ const G = {
   gold: 0,
   baseHP: 100, baseMaxHP: 100,
   towers: [], enemies: [], projectiles: [], coins: [], floats: [], heroFlashes: [],
+  particles: [], rings: [], shake: { time:0, mag:0 },
   terrain: [],
   waves: [], waveIdx: -1, prepTimer: 3,
   currentEvents: [], spawnIdx: 0, spawnCountdown: 0, spawning: false,
@@ -548,7 +590,7 @@ const G = {
   hero: {
     kills: 0, level: 1, baseClass: null, finalClass: null,
     atkCd: 0, rageTimer: 0, rageMult: 1, rageIgnoreArmor: false,
-    abilityLevel: { a:0, b:0 }, abilityCd: { a:0, b:0 }
+    abilityLevel: { a:0, b:0, c:0, d:0 }, abilityCd: { a:0, b:0, c:0, d:0 }
   },
   paused: false, speedMul: 1,
   hover: {x:-1,y:-1},
@@ -568,6 +610,62 @@ function removeTower(t){ const i=G.towers.indexOf(t); if(i>=0) G.towers.splice(i
 function spawnFloat(x,y,text,color){
   G.floats.push({ x, y, text, color: color||'#ffffff', life: 1.1, vy: -32 });
 }
+
+// ============ 技能特效系統：爆裂粒子／擴散光環／畫面震動 ============
+function fxParticles(x,y,color,count,opts){
+  opts = opts || {};
+  const speedMin = opts.speedMin!==undefined?opts.speedMin:70;
+  const speedMax = opts.speedMax!==undefined?opts.speedMax:230;
+  for(let i=0;i<count;i++){
+    const ang = Math.random()*Math.PI*2;
+    const spd = rand(speedMin, speedMax);
+    const life = rand(0.28, 0.6);
+    G.particles.push({
+      x, y, vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd - rand(0,50),
+      life, maxLife: life, color, size: rand(2, opts.sizeMax||4.5)
+    });
+  }
+}
+function fxRing(x,y,maxR,color,life,width){
+  G.rings.push({ x, y, r:0, maxR, life: life||0.4, maxLife: life||0.4, color, width: width||4 });
+}
+function fxShake(mag,dur){
+  G.shake.mag = Math.max(G.shake.mag, mag);
+  G.shake.time = Math.max(G.shake.time, dur||0.18);
+}
+function updateFx(dt){
+  for(let i=G.particles.length-1;i>=0;i--){
+    const p = G.particles[i];
+    p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 260*dt;
+    p.life -= dt;
+    if(p.life<=0) G.particles.splice(i,1);
+  }
+  for(let i=G.rings.length-1;i>=0;i--){
+    const r = G.rings[i];
+    r.life -= dt;
+    const t = 1 - Math.max(0, r.life/r.maxLife);
+    r.r = r.maxR * (1 - Math.pow(1-t, 3));
+    if(r.life<=0) G.rings.splice(i,1);
+  }
+  if(G.shake.time>0){ G.shake.time = Math.max(0, G.shake.time-dt); if(G.shake.time===0) G.shake.mag=0; }
+}
+function drawFx(){
+  ctx.save();
+  for(const p of G.particles){
+    const a = Math.max(0, p.life/p.maxLife);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size*a+0.6, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  for(const r of G.rings){
+    const a = Math.max(0, r.life/r.maxLife);
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = r.color; ctx.lineWidth = r.width*a+1;
+    ctx.beginPath(); ctx.arc(r.x, r.y, Math.max(1,r.r), 0, Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+}
 let hudRects = { pause:{x:0,y:0,w:0,h:0}, menu:{x:0,y:0,w:0,h:0}, speed:{x:0,y:0,w:0,h:0} };
 
 // ============ 關卡流程 ============
@@ -583,7 +681,8 @@ function startLevel(n){
   G.placing = false; G.selected = null; G.pendingMerge = null; G.pendingHeroClass = null;
   G.wallShieldPct = 0; G.wallShieldTimer = 0; G.wallInvulnTimer = 0;
   G.hero.atkCd = 0; G.hero.rageTimer = 0; G.hero.rageMult = 1; G.hero.rageIgnoreArmor = false;
-  G.hero.abilityCd.a = 0; G.hero.abilityCd.b = 0;
+  G.hero.abilityCd.a = 0; G.hero.abilityCd.b = 0; G.hero.abilityCd.c = 0; G.hero.abilityCd.d = 0;
+  G.particles = []; G.rings = []; G.shake = { time:0, mag:0 };
   G.paused = false; G.speedMul = 1;
   G.gameOver = false; G.levelComplete = false;
   G.coinTimer = rand(4,7);
@@ -643,7 +742,9 @@ function makeEnemyBase(type, row, levelMult, x){
     summonTypes: cfg.summonTypes || ['basic'],
     abilityInterval: cfg.abilityInterval || 0, abilityCd: cfg.abilityInterval || 0,
     abilityDisableDuration: cfg.abilityDisableDuration || 0, abilityScope: cfg.abilityScope || 'single',
-    curseTimer: 0, curseDmgMult: 1, curseArmorRed: 0
+    curseTimer: 0, curseDmgMult: 1, curseArmorRed: 0,
+    deathSpawnType: cfg.deathSpawn ? cfg.deathSpawn.type : null,
+    deathSpawnCount: cfg.deathSpawn ? cfg.deathSpawn.count : 0
   };
 }
 
@@ -654,12 +755,13 @@ function spawnEnemy(type, row, levelMult){
   const onShip = seaWidthOf(row) > 0;
   const e = makeEnemyBase(type, row, levelMult, GRID_X + COLS*CELL_W + 46);
   e.onShip = onShip;
+  e.cargoWeights = cfg.cargoWeights || null;
   if(onShip){
     const shipHp = Math.round(e.hp * (cfg.shipMult||1.3) * SHIP_HP_BUFF);
     e.shipHp = shipHp;
     e.shipMaxHp = shipHp;
     e.troopsPerShip = cfg.troopsPerShip || TROOPS_PER_SHIP_DEFAULT;
-    if(e.troopsPerShip > 1) e.name = cfg.name + '運兵船';
+    if(e.troopsPerShip > 1 && !/[船艦艇]$/.test(cfg.name)) e.name = cfg.name + '運兵船';
   } else {
     // 這一列沒有海域可搭船，直接以單一兵力出現在陸地上(不套用搶灘/船隻機制)
     e.shipHp = e.hp; e.shipMaxHp = e.hp; e.troopsPerShip = 1;
@@ -884,7 +986,8 @@ function resolveShipSunk(e, i){
   }
   spawnFloat(e.x, GRID_Y + e.row*CELL_H - 12, totalTroops>1 ? `${survivors}/${totalTroops} 泅水上岸！` : '泅水上岸！', '#fff59d');
   for(let k=0;k<survivors;k++){
-    const t = makeEnemyBase(e.type, e.row, e.levelMult, e.x - k*18);
+    const cargoType = e.cargoWeights ? pickCargoType(e.cargoWeights) : e.type;
+    const t = makeEnemyBase(cargoType, e.row, e.levelMult, e.x - k*18);
     t.onShip = false;
     t.shipHp = t.hp; t.shipMaxHp = t.hp; t.troopsPerShip = 1;
     t.state = 'walking'; // 船已經沉了，剩下的人得自己游/走上岸，沒有陣地可躲
@@ -966,7 +1069,8 @@ function updateEnemies(dt){
         if(survivors <= 0 && e.shipHp > 0) survivors = 1; // 船沒沉，至少有人搶灘成功
         survivors = clamp(survivors, 0, e.troopsPerShip);
         for(let k=0;k<survivors;k++){
-          spawnLandedTroop(e.type, e.row, e.levelMult, landX - k*22);
+          const cargoType = e.cargoWeights ? pickCargoType(e.cargoWeights) : e.type;
+          spawnLandedTroop(cargoType, e.row, e.levelMult, landX - k*22);
         }
         const lost = e.troopsPerShip - survivors;
         if(survivors <= 0){
@@ -1110,6 +1214,12 @@ function updateEnemies(dt){
     } else if(e.hp <= 0){
       G.gold += e.gold;
       spawnFloat(e.x, GRID_Y + e.row*CELL_H + 20, '+'+e.gold, '#ffd54f');
+      if(e.deathSpawnCount>0 && e.deathSpawnType){
+        for(let k=0;k<e.deathSpawnCount;k++){
+          spawnLandedTroop(e.deathSpawnType, e.row, e.levelMult, e.x - (k+1)*20);
+        }
+        spawnFloat(e.x, GRID_Y+e.row*CELL_H-14, '車體炸開，散兵突圍！', '#ff8a65');
+      }
       G.enemies.splice(i,1);
       registerKill();
       AudioSys.sfx.enemyDeath();
@@ -1201,6 +1311,7 @@ function update(dt){
   updateHero(sdt);
   updateCoins(sdt);
   updateFloats(sdt);
+  updateFx(sdt);
 }
 
 // ============ 英雄(城牆主角)系統邏輯 ============
@@ -1266,52 +1377,113 @@ function castAbility(slot){
   const mag = def.mags[lvl-1];
   h.abilityCd[slot] = def.cds[lvl-1];
   const pos = heroPos();
+  const color = CLASS_COLOR[activeClass] || '#ffe082';
+  const eY = e => GRID_Y + e.row*CELL_H + CELL_H/2;
   const inRange = (e, r) => {
-    const dx=e.x-pos.x, dy=(GRID_Y+e.row*CELL_H+CELL_H/2)-pos.y;
+    const dx=e.x-pos.x, dy=eY(e)-pos.y;
     return dx>=-40 && Math.hypot(dx,dy) <= (r===undefined?999999:r);
   };
   const COMMANDER_TYPES = ['flag','boss','megaboss20','megaboss40'];
+  // 命中特效：在目標位置炸開粒子＋小光環
+  const hitFx = (e, count) => { fxParticles(e.x, eY(e), color, count||10); fxRing(e.x, eY(e), 44, color, 0.28, 3); };
+  // 施法瞬間：主角腳下爆發的施法光環＋粒子
+  fxRing(pos.x, pos.y, 60, color, 0.32, 4);
+  fxParticles(pos.x, pos.y, color, 14, { speedMin:40, speedMax:150 });
+
   switch(activeClass){
     case 'warrior':
       if(slot==='a'){
-        G.enemies.forEach(e=>{ if(inRange(e,240)) applyDamage(e, mag.dmg, {ignoreArmor:true}); });
-      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,240)){ applyDamage(e, mag.dmg, {ignoreArmor:true}); hitFx(e,12); } });
+        fxShake(9,0.18);
+      } else if(slot==='b'){
         G.wallShieldPct = Math.max(G.wallShieldPct, mag.shieldPct); G.wallShieldTimer = Math.max(G.wallShieldTimer, mag.dur);
+        fxRing(pos.x, pos.y, 90, '#90caf9', 0.6, 5);
+        fxShake(3,0.15);
+      } else if(slot==='c'){
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)){ applyDamage(e, mag.dmg, {ignoreArmor:true}); hitFx(e,10); } });
+        fxRing(pos.x, pos.y, mag.radius, color, 0.35, 5);
+        fxShake(10,0.2);
+      } else {
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
+        const t = cands[0];
+        if(t){ applyDamage(t, mag.dmg, {ignoreArmor:true}); t.frozenTimer=Math.max(t.frozenTimer,mag.stun); hitFx(t,20); fxShake(14,0.22); }
       }
       break;
     case 'ranger':
       if(slot==='a'){
         const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
-        if(cands[0]) applyDamage(cands[0], mag.dmg, {ignoreArmor:true});
+        if(cands[0]){ applyDamage(cands[0], mag.dmg, {ignoreArmor:true}); hitFx(cands[0],12); fxShake(6,0.15); }
+      } else if(slot==='b'){
+        G.enemies.forEach(e=>{ if(inRange(e,320)){ e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); fxParticles(e.x,eY(e),'#b3e5fc',6,{speedMin:20,speedMax:80}); } });
+      } else if(slot==='c'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x).slice(0,mag.maxTargets);
+        cands.forEach(e=>{ applyDamage(e, mag.dmg, {ignoreArmor:true}); hitFx(e,9); });
+        if(cands.length) fxShake(7,0.15);
       } else {
-        G.enemies.forEach(e=>{ if(inRange(e,320)) e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); });
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
+        const t = cands[0];
+        if(t){ applyDamage(t, mag.dmg, {ignoreArmor:true}); t.dot = { dps:mag.dps, remaining:mag.dur }; hitFx(t,14); fxShake(8,0.18); }
       }
       break;
     case 'mage':
       if(slot==='a'){
-        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)) applyDamage(e, mag.dmg, {}); });
-      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)){ applyDamage(e, mag.dmg, {}); hitFx(e,10); } });
+        fxRing(pos.x, pos.y, mag.radius, color, 0.35, 5);
+        fxShake(9,0.18);
+      } else if(slot==='b'){
         G.enemies.forEach(e=>{
           if(!inRange(e,mag.radius)) return;
           e.tempSlowFactor = Math.min(e.tempSlowFactor, 1-mag.slowPct);
           e.tempSlowTimer = Math.max(e.tempSlowTimer, mag.dur);
         });
+        fxRing(pos.x, pos.y, mag.radius, '#b3e5fc', 0.5, 4);
+      } else if(slot==='c'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x).slice(0,mag.maxTargets);
+        let prev = pos;
+        cands.forEach(e=>{ applyDamage(e, mag.dmg, {}); hitFx(e,9); fxParticles((prev.x+e.x)/2, (prev.y!==undefined?prev.y:eY(e)+eY(e))/2, '#fff59d', 4, {speedMin:10,speedMax:40}); prev = {x:e.x,y:eY(e)}; });
+        if(cands.length) fxShake(7,0.15);
+      } else {
+        G.enemies.forEach(e=>{ e.tempSlowFactor = Math.min(e.tempSlowFactor, 1-mag.slowPct); e.tempSlowTimer = Math.max(e.tempSlowTimer, mag.dur); });
+        fxRing(pos.x, pos.y, 500, '#ce93d8', 0.6, 4);
+        fxShake(4,0.2);
       }
       break;
     case 'paladin':
       if(slot==='a'){
-        G.enemies.forEach(e=>{ if(inRange(e,320)) e.frozenTimer=Math.max(e.frozenTimer,mag.stunDur); });
+        G.enemies.forEach(e=>{ if(inRange(e,320)){ e.frozenTimer=Math.max(e.frozenTimer,mag.stunDur); fxParticles(e.x,eY(e),color,6,{speedMin:20,speedMax:80}); } });
         G.wallShieldPct = mag.shieldPct; G.wallShieldTimer = 6;
-      } else {
+        fxShake(5,0.2);
+      } else if(slot==='b'){
         G.wallInvulnTimer = Math.max(G.wallInvulnTimer, mag.invulnDur);
         G.baseHP = clamp(G.baseHP+mag.heal, 0, G.baseMaxHP);
+        fxRing(pos.x, pos.y, 100, '#fff9c4', 0.7, 5);
+      } else if(slot==='c'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
+        const t = cands[0];
+        if(t){ applyDamage(t, mag.dmg, {ignoreArmor:true}); t.frozenTimer=Math.max(t.frozenTimer,mag.stun); hitFx(t,22); fxShake(15,0.24); }
+      } else {
+        G.baseHP = clamp(G.baseHP+mag.heal, 0, G.baseMaxHP);
+        G.wallShieldPct = Math.max(G.wallShieldPct, mag.shieldPct); G.wallShieldTimer = Math.max(G.wallShieldTimer, mag.dur);
+        fxRing(pos.x, pos.y, 90, '#fff9c4', 0.6, 5);
+        fxParticles(pos.x, pos.y, '#fff9c4', 12, {speedMin:20,speedMax:80});
       }
       break;
     case 'berserker':
       if(slot==='a'){
-        G.enemies.forEach(e=>{ if(inRange(e,260)) applyDamage(e, mag.dmg, {ignoreArmor:true}); });
-      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,260)){ applyDamage(e, mag.dmg, {ignoreArmor:true}); hitFx(e,12); } });
+        fxShake(10,0.2);
+      } else if(slot==='b'){
         h.rageTimer = mag.dur; h.rageMult = mag.mult; h.rageIgnoreArmor = true;
+        fxRing(pos.x, pos.y, 70, '#ff1744', 0.5, 6);
+        fxShake(6,0.2);
+      } else if(slot==='c'){
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)){ applyDamage(e, mag.dmg, {ignoreArmor:true}); hitFx(e,10); } });
+        fxRing(pos.x, pos.y, mag.radius, color, 0.35, 6);
+        fxShake(12,0.22);
+      } else {
+        G.wallInvulnTimer = Math.max(G.wallInvulnTimer, mag.invulnDur);
+        G.baseHP = clamp(G.baseHP+mag.heal, 0, G.baseMaxHP);
+        fxRing(pos.x, pos.y, 100, '#ff8a80', 0.7, 5);
       }
       break;
     case 'scout':
@@ -1322,36 +1494,79 @@ function castAbility(slot){
           target.frozenTimer = Math.max(target.frozenTimer, mag.freeze);
           const isCmd = COMMANDER_TYPES.includes(target.type);
           applyDamage(target, mag.dmg*(isCmd?mag.bonus:1), {ignoreArmor:true});
+          hitFx(target,12); fxShake(7,0.16);
         }
+      } else if(slot==='b'){
+        G.enemies.forEach(e=>{ if(inRange(e,320)){ e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); fxParticles(e.x,eY(e),'#b3e5fc',6,{speedMin:20,speedMax:80}); } });
+      } else if(slot==='c'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x).slice(0,mag.maxTargets);
+        cands.forEach(e=>{ applyDamage(e, mag.dmg, {ignoreArmor:true}); hitFx(e,9); });
+        if(cands.length) fxShake(7,0.15);
       } else {
-        G.enemies.forEach(e=>{ if(inRange(e,320)) e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); });
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
+        const target = cands.find(e=>COMMANDER_TYPES.includes(e.type)) || cands[0];
+        if(target){
+          const isCmd = COMMANDER_TYPES.includes(target.type);
+          applyDamage(target, mag.dmg*(isCmd?mag.bonus:1), {ignoreArmor:true});
+          hitFx(target,20); fxShake(13,0.22);
+        }
       }
       break;
     case 'sniper':
       if(slot==='a'){
         const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
-        if(cands[0]) applyDamage(cands[0], mag.dmg, {ignoreArmor:true, bypassDeflect:true, shieldMult:2.2});
-      } else {
+        if(cands[0]){ applyDamage(cands[0], mag.dmg, {ignoreArmor:true, bypassDeflect:true, shieldMult:2.2}); hitFx(cands[0],14); fxShake(9,0.16); }
+      } else if(slot==='b'){
         G.enemies.forEach(e=>{
           if(!inRange(e)) return;
           const ratio = e.onShip? e.shipHp/e.shipMaxHp : e.hp/e.maxHp;
-          if(ratio<=mag.pct){ if(e.onShip) e.shipHp=-9999; else e.hp=-9999; }
-          else if(['boss','megaboss20','megaboss40'].includes(e.type)) applyDamage(e, mag.trueDmg, {ignoreArmor:true});
+          if(ratio<=mag.pct){ if(e.onShip) e.shipHp=-9999; else e.hp=-9999; hitFx(e,16); }
+          else if(['boss','megaboss20','megaboss40'].includes(e.type)){ applyDamage(e, mag.trueDmg, {ignoreArmor:true}); hitFx(e,10); }
         });
+        fxShake(8,0.18);
+      } else if(slot==='c'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x).slice(0,mag.maxTargets);
+        cands.forEach(e=>{ applyDamage(e, mag.dmg, {ignoreArmor:true, bypassDeflect:true}); hitFx(e,9); });
+        if(cands.length) fxShake(8,0.16);
+      } else {
+        G.baseHP = clamp(G.baseHP+mag.heal, 0, G.baseMaxHP);
+        G.wallShieldPct = Math.max(G.wallShieldPct, mag.shieldPct); G.wallShieldTimer = Math.max(G.wallShieldTimer, mag.dur);
+        fxRing(pos.x, pos.y, 90, '#a5d6a7', 0.6, 5);
       }
       break;
     case 'elementalist':
       if(slot==='a'){
-        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)) applyDamage(e, mag.dmg, {}); });
-      } else {
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)){ applyDamage(e, mag.dmg, {}); hitFx(e,10); } });
+        fxRing(pos.x, pos.y, mag.radius, color, 0.35, 5);
+        fxShake(11,0.2);
+      } else if(slot==='b'){
         G.enemies.forEach(e=>{ if(inRange(e,mag.radius)) e.dot = { dps:mag.dps, remaining:mag.dur }; });
+        fxRing(pos.x, pos.y, mag.radius, '#ff7043', 0.5, 4);
+      } else if(slot==='c'){
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)){ e.dot = { dps:mag.dps, remaining:mag.dur }; fxParticles(e.x,eY(e),'#fff176',5,{speedMin:20,speedMax:70}); } });
+        fxRing(pos.x, pos.y, mag.radius, '#fff176', 0.4, 5);
+        fxShake(8,0.2);
+      } else {
+        G.enemies.forEach(e=>{ e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); });
+        fxRing(pos.x, pos.y, 500, '#80deea', 0.6, 5);
+        fxShake(6,0.24);
       }
       break;
     case 'warlock':
       if(slot==='a'){
         G.enemies.forEach(e=>{ e.frozenTimer=Math.max(e.frozenTimer,mag.freeze); });
+        fxRing(pos.x, pos.y, 500, '#b3e5fc', 0.6, 5);
+        fxShake(5,0.22);
+      } else if(slot==='b'){
+        G.enemies.forEach(e=>{ if(inRange(e,300)){ e.curseTimer=Math.max(e.curseTimer,mag.dur); e.curseDmgMult=mag.dmgMult; e.curseArmorRed=mag.armorRed; fxParticles(e.x,eY(e),'#ab47bc',5,{speedMin:15,speedMax:60}); } });
+      } else if(slot==='c'){
+        const cands = G.enemies.filter(e=>inRange(e)).sort((a,b)=>a.x-b.x);
+        const t = cands[0];
+        if(t){ applyDamage(t, mag.dmg, {ignoreArmor:true}); G.baseHP = clamp(G.baseHP+mag.heal, 0, G.baseMaxHP); hitFx(t,16); fxShake(9,0.18); }
       } else {
-        G.enemies.forEach(e=>{ if(inRange(e,300)){ e.curseTimer=Math.max(e.curseTimer,mag.dur); e.curseDmgMult=mag.dmgMult; e.curseArmorRed=mag.armorRed; } });
+        G.enemies.forEach(e=>{ if(inRange(e,mag.radius)){ applyDamage(e, mag.dmg, {}); e.curseTimer=Math.max(e.curseTimer,mag.curseDur); e.curseDmgMult=0.6; e.curseArmorRed=0.2; hitFx(e,11); } });
+        fxRing(pos.x, pos.y, mag.radius, color, 0.4, 6);
+        fxShake(13,0.24);
       }
       break;
   }
@@ -1768,6 +1983,52 @@ function drawDiverPirate(){
   ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=2;
   ctx.beginPath(); ctx.arc(0,-17,7,0,Math.PI*2); ctx.stroke();
 }
+function drawWheeledCart(color, w, h){
+  // 共用：兩輪拖車底盤，供炮車/突擊車/護盾車使用
+  ctx.fillStyle='#3e2723';
+  ctx.beginPath(); ctx.arc(-w*0.32,h*0.42,5.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(w*0.32,h*0.42,5.5,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(-w*0.32,h*0.42,5.5,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(w*0.32,h*0.42,5.5,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle=color;
+  roundRect(-w/2,-h/2,w,h,4); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.4; ctx.stroke();
+}
+function drawArtyCarPirate(){
+  drawShadow();
+  drawWheeledCart('#4e342e', 34, 18);
+  // 砲管：長筒指向陸地方向，代表遠程壓制
+  ctx.strokeStyle='#212121'; ctx.lineWidth=5;
+  ctx.beginPath(); ctx.moveTo(-6,-6); ctx.lineTo(-26,-13); ctx.stroke();
+  ctx.strokeStyle='#616161'; ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(-6,-6); ctx.lineTo(-26,-13); ctx.stroke();
+  ctx.fillStyle='#8d6e63';
+  ctx.beginPath(); ctx.arc(2,-8,7,0,Math.PI*2); ctx.fill();
+  drawPirateHead('#e0a978', 'left');
+}
+function drawBreakerCarPirate(){
+  drawShadow();
+  drawWheeledCart('#5d4037', 38, 22);
+  // 前方裝甲衝角，象徵突圍破防
+  ctx.fillStyle='#37474f';
+  ctx.beginPath(); ctx.moveTo(-19,-9); ctx.lineTo(-30,0); ctx.lineTo(-19,9); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#ffab40'; ctx.lineWidth=1.4;
+  for(let i=-1;i<=1;i++){ ctx.beginPath(); ctx.moveTo(-22,i*6); ctx.lineTo(-27,i*6); ctx.stroke(); }
+  drawPirateHead('#c98a5a');
+  ctx.strokeStyle='rgba(255,171,64,0.5)'; ctx.lineWidth=2;
+  for(let k=0;k<2;k++){ ctx.beginPath(); ctx.moveTo(20+k*6,-4+k*8); ctx.lineTo(32+k*6,-4+k*8); ctx.stroke(); }
+}
+function drawShieldCarPirate(){
+  drawShadow();
+  drawWheeledCart('#4a148c', 36, 20);
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2.2;
+  ctx.beginPath(); ctx.moveTo(14,-8); ctx.lineTo(14,-30); ctx.stroke();
+  ctx.fillStyle='#ffd54f';
+  ctx.beginPath(); ctx.moveTo(14,-30); ctx.lineTo(30,-24); ctx.lineTo(14,-18); ctx.closePath(); ctx.fill();
+  drawPirateHead('#d99a68', 'left');
+  ctx.fillStyle='#ba68c8'; ctx.beginPath(); ctx.arc(-4,-2,3.5,0,Math.PI*2); ctx.fill();
+}
 function drawMegaboss20Pirate(){
   ctx.save(); ctx.scale(1.2,1.2);
   ctx.beginPath(); ctx.arc(0,-2,32,0,Math.PI*2);
@@ -1797,6 +2058,9 @@ function drawPirateSprite(type){
     case 'shield': drawShieldPirate(); break;
     case 'diver': drawDiverPirate(); break;
     case 'flag': drawFlagPirate(); break;
+    case 'artyCar': drawArtyCarPirate(); break;
+    case 'breakerCar': drawBreakerCarPirate(); break;
+    case 'shieldCar': drawShieldCarPirate(); break;
     case 'megaboss20': drawMegaboss20Pirate(); break;
     case 'megaboss40': drawMegaboss40Pirate(); break;
     default: drawBasicPirate();
@@ -2015,6 +2279,22 @@ function drawMegaboss40Ship(){
   ctx.fillText('👑', 4, -58);
   ctx.restore();
 }
+function drawGunboatShip(){
+  ctx.save(); ctx.scale(1.2,1.15);
+  drawShipHull(68,20,'#6d6250');
+  // 甲板上一排貨箱，象徵這是載送載具的運輸船而非戰鬥船
+  const crateColors = ['#8d6e63','#795548','#a1887f'];
+  for(let i=-1;i<=1;i++){
+    ctx.fillStyle = crateColors[i+1];
+    roundRect(i*18-7,-16,14,13,2); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1; ctx.strokeRect(i*18-7,-16,14,13);
+    ctx.strokeStyle='rgba(0,0,0,0.2)'; ctx.lineWidth=0.8;
+    ctx.beginPath(); ctx.moveTo(i*18,-16); ctx.lineTo(i*18,-3); ctx.stroke();
+  }
+  ctx.fillStyle='#37474f'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('⚙️', 0, -28);
+  ctx.restore();
+}
 function drawShipSprite(type){
   switch(type){
     case 'basic': drawBasicShip(); break;
@@ -2027,6 +2307,7 @@ function drawShipSprite(type){
     case 'shield': drawShieldShip(); break;
     case 'diver': drawDiverShip(); break;
     case 'flag': drawFlagShip(); break;
+    case 'gunboat': drawGunboatShip(); break;
     case 'megaboss20': drawMegaboss20Ship(); break;
     case 'megaboss40': drawMegaboss40Ship(); break;
     default: drawBasicShip();
@@ -2202,7 +2483,7 @@ function drawPlacementPreview(){
 }
 
 let shopBuyRect = {x:0,y:0,w:0,h:0};
-let heroAbilityRects = { a:{x:0,y:0,w:0,h:0}, b:{x:0,y:0,w:0,h:0} };
+let heroAbilityRects = { a:{x:0,y:0,w:0,h:0}, b:{x:0,y:0,w:0,h:0}, c:{x:0,y:0,w:0,h:0}, d:{x:0,y:0,w:0,h:0} };
 let heroShopBtnRect = {x:0,y:0,w:0,h:0};
 function drawShopBar(){
   const y0 = GRID_Y + ROWS*CELL_H + 6;
@@ -2243,15 +2524,19 @@ function drawShopBar(){
   hudRects.menu = {x:menuBtnX, y:midY, w:menuBtnW, h:btnH};
   hudRects.speed = {x:speedBtnX, y:midY, w:speedBtnW, h:btnH};
 
-  // ===== 右下：購買新兵砲／技能a・b／技能商店，全部集中在右指固定區、放大尺寸 =====
+  // ===== 右下：購買新兵砲／技能a・b・c・d(2x2方陣)／技能商店，全部集中在右指固定區、放大尺寸 =====
   const iconSize = Math.round(barH*0.6);
   const buyW = Math.round(96*s);
-  const shopBtnW = Math.round(96*s);
+  const shopBtnW = Math.round(72*s);
   const rGap = Math.round(10*s);
   const rightPad = Math.round(16*s);
-  const rightTotalW = buyW + rGap + iconSize + rGap + iconSize + rGap + shopBtnW;
+  const gridGap = Math.round(4*s);
+  const subSize = Math.round((iconSize*1.14 - gridGap)/2);
+  const gridW = subSize*2 + gridGap;
+  const rightTotalW = buyW + rGap + gridW + rGap + shopBtnW;
   let rx = CANVAS_W - rightTotalW - rightPad;
   const ry = y0 + Math.round(barH*0.5) - iconSize/2;
+  const gridY = y0 + Math.round(barH*0.5) - gridW/2;
 
   const canBuy = G.gold >= TOWER_COST;
   shopBuyRect = {x:rx,y:ry,w:buyW,h:iconSize};
@@ -2269,39 +2554,42 @@ function drawShopBar(){
   rx += buyW + rGap;
 
   const activeClass = G.hero.finalClass || G.hero.baseClass;
-  ['a','b'].forEach((slot)=>{
-    const ix = rx;
+  const slotKeys = { a:'A', b:'S', c:'Z', d:'X' };
+  ['a','b','c','d'].forEach((slot,i)=>{
+    const col = i%2, row = Math.floor(i/2);
+    const ix = rx + col*(subSize+gridGap);
+    const iy = gridY + row*(subSize+gridGap);
     const unlocked = !!activeClass && G.hero.abilityLevel[slot]>0;
     ctx.save();
-    roundRect(ix,ry,iconSize,iconSize,10);
+    roundRect(ix,iy,subSize,subSize,7);
     ctx.fillStyle = unlocked ? '#37474f' : '#2a2a2a';
     ctx.fill();
-    ctx.strokeStyle='#efd9a5'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.strokeStyle='#efd9a5'; ctx.lineWidth=1.2; ctx.stroke();
     ctx.textAlign='center'; ctx.textBaseline='middle';
     if(unlocked){
       const def = ABILITIES[activeClass][slot];
-      ctx.font=Math.round(iconSize*0.48)+'px sans-serif'; ctx.fillStyle='#fff';
-      ctx.fillText(def.emoji, ix+iconSize/2, ry+iconSize/2);
+      ctx.font=Math.round(subSize*0.5)+'px sans-serif'; ctx.fillStyle='#fff';
+      ctx.fillText(def.emoji, ix+subSize/2, iy+subSize/2);
       const cd = G.hero.abilityCd[slot];
       if(cd>0){
-        ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(ix,ry,iconSize,iconSize);
-        ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(iconSize*0.3)+'px sans-serif';
-        ctx.fillText(Math.ceil(cd), ix+iconSize/2, ry+iconSize/2);
+        ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(ix,iy,subSize,subSize);
+        ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(subSize*0.34)+'px sans-serif';
+        ctx.fillText(Math.ceil(cd), ix+subSize/2, iy+subSize/2);
       }
     } else {
-      ctx.font=Math.round(iconSize*0.38)+'px sans-serif'; ctx.fillStyle='#777';
-      ctx.fillText('🔒', ix+iconSize/2, ry+iconSize/2);
+      ctx.font=Math.round(subSize*0.38)+'px sans-serif'; ctx.fillStyle='#777';
+      ctx.fillText('🔒', ix+subSize/2, iy+subSize/2);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
-    ctx.font='bold '+Math.round(iconSize*0.22)+'px sans-serif'; ctx.fillStyle='#ffe082';
-    ctx.fillText(slot==='a' ? 'A' : 'S', ix+3, ry+2);
+    ctx.font='bold '+Math.round(subSize*0.24)+'px sans-serif'; ctx.fillStyle='#ffe082';
+    ctx.fillText(slotKeys[slot], ix+2, iy+1);
     ctx.restore();
-    heroAbilityRects[slot] = { x:ix, y:ry, w:iconSize, h:iconSize };
-    rx += iconSize + rGap;
+    heroAbilityRects[slot] = { x:ix, y:iy, w:subSize, h:subSize };
   });
+  rx += gridW + rGap;
 
   const shopBtnX = rx;
-  drawButton(shopBtnX, ry, shopBtnW, iconSize, '🎖️技能(D)', '#5d4037', Math.round(12*s));
+  drawButton(shopBtnX, ry, shopBtnW, iconSize, '🎖️(D)', '#5d4037', Math.round(12*s));
   heroShopBtnRect = { x:shopBtnX, y:ry, w:shopBtnW, h:iconSize };
 
   // ===== 中間偏左空隙：合成提示文字(空間不夠時自動隱藏，不硬擠) =====
@@ -2407,13 +2695,13 @@ function drawHeroShopOverlay(){
   ctx.save();
   ctx.fillStyle='rgba(0,0,0,0.75)';
   ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
-  const w = Math.min(620, CANVAS_W-80), h = Math.min(420, CANVAS_H-80);
+  const w = Math.min(680, CANVAS_W-40), h = Math.min(430, CANVAS_H-40);
   const x = (CANVAS_W-w)/2, y = (CANVAS_H-h)/2;
   roundRect(x,y,w,h,14);
   ctx.fillStyle='#132a3e'; ctx.fill();
   ctx.strokeStyle='#ffd54f'; ctx.lineWidth=2; ctx.stroke();
-  ctx.textAlign='center'; ctx.fillStyle='#ffd54f'; ctx.font='bold 22px sans-serif';
-  ctx.fillText('🎖️ 英雄技能', CANVAS_W/2, y+36);
+  ctx.textAlign='center'; ctx.fillStyle='#ffd54f'; ctx.font='bold 20px sans-serif';
+  ctx.fillText('🎖️ 英雄技能（共4個主動技能）', CANVAS_W/2, y+30);
 
   heroShopRects = [];
   const shopActiveClass = G.hero.finalClass || G.hero.baseClass;
@@ -2423,26 +2711,33 @@ function drawHeroShopOverlay(){
     ctx.fillStyle='#a9c6e8'; ctx.font='13px sans-serif';
     ctx.fillText('目前等級：Lv.'+G.hero.level+'（累積擊殺 '+G.hero.kills+'）', CANVAS_W/2, y+h/2+28);
   } else {
-    ['a','b'].forEach((slot,idx)=>{
+    const cols = 2, gap = 14, padX = 24;
+    const cardW = (w - padX*2 - gap) / 2;
+    const cardH = 150;
+    const gridTop = y + 50;
+    ['a','b','c','d'].forEach((slot,idx)=>{
       const def = ABILITIES[shopActiveClass][slot];
       const lvl = G.hero.abilityLevel[slot];
-      const cardY = y + 70 + idx*140;
-      roundRect(x+30, cardY, w-60, 120, 10);
+      const col = idx % cols, row = Math.floor(idx / cols);
+      const cardX = x + padX + col*(cardW+gap);
+      const cardY = gridTop + row*(cardH+gap);
+      roundRect(cardX, cardY, cardW, cardH, 10);
       ctx.fillStyle='#1c3a52'; ctx.fill();
       ctx.strokeStyle='#3d5a75'; ctx.lineWidth=1.5; ctx.stroke();
       ctx.textAlign='left';
-      ctx.font='28px sans-serif'; ctx.fillStyle='#fff';
-      ctx.fillText(def.emoji, x+46, cardY+42);
-      ctx.font='bold 16px sans-serif'; ctx.fillStyle='#ffd54f';
-      ctx.fillText(def.name+'　Lv.'+lvl+'/3', x+90, cardY+34);
-      ctx.font='12px sans-serif'; ctx.fillStyle='#cfe3f5';
+      ctx.font='26px sans-serif'; ctx.fillStyle='#fff';
+      ctx.fillText(def.emoji, cardX+16, cardY+38);
+      ctx.font='bold 14px sans-serif'; ctx.fillStyle='#ffd54f';
+      ctx.fillText(def.name+'　Lv.'+lvl+'/3', cardX+52, cardY+30);
+      ctx.font='11px sans-serif'; ctx.fillStyle='#cfe3f5';
       const curMag = lvl>0 ? JSON.stringify(def.mags[lvl-1]).replace(/[{}"]/g,'').replace(/,/g,'／') : '尚未學習';
-      ctx.fillText('目前效果：'+curMag, x+90, cardY+58);
-      const btnW=120, btnH=36, btnX=x+w-60-btnW, btnY=cardY+120-btnH-14;
+      const magLines = wrapText(curMag, cardW-64).slice(0,3);
+      magLines.forEach((ln,li)=> ctx.fillText(ln, cardX+52, cardY+50+li*14));
+      const btnW=110, btnH=32, btnX=cardX+cardW-16-btnW, btnY=cardY+cardH-btnH-12;
       if(lvl>=3){
         ctx.fillStyle='#4a4a4a';
         roundRect(btnX,btnY,btnW,btnH,8); ctx.fill();
-        ctx.fillStyle='#bbb'; ctx.textAlign='center'; ctx.font='13px sans-serif';
+        ctx.fillStyle='#bbb'; ctx.textAlign='center'; ctx.font='12px sans-serif';
         ctx.fillText('已滿級', btnX+btnW/2, btnY+btnH/2+4);
       } else {
         const cost = def.costs[lvl];
@@ -2450,7 +2745,7 @@ function drawHeroShopOverlay(){
         ctx.fillStyle = canAfford ? '#2e7d32' : '#4a4a4a';
         roundRect(btnX,btnY,btnW,btnH,8); ctx.fill();
         ctx.strokeStyle='#efd9a5'; ctx.lineWidth=1; ctx.stroke();
-        ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 13px sans-serif';
+        ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 12px sans-serif';
         ctx.fillText((lvl===0?'學習':'升級')+' '+cost+'💰', btnX+btnW/2, btnY+btnH/2+4);
         heroShopRects.push({x:btnX,y:btnY,w:btnW,h:btnH,slot,cost});
       }
@@ -2496,6 +2791,7 @@ function drawGame(){
   drawEnemies();
   drawProjectiles();
   drawHeroFlashes();
+  drawFx();
   drawCoins();
   drawPlacementPreview();
   drawFloats();
@@ -2581,7 +2877,7 @@ function drawMenu(){
     '⑤ 海盜登陸後不會馬上衝：會先在灘頭架盾集結(此時傷害減免、還有機率完全閃避)，湊到足夠人數(或等太久)才會一起發動「衝鋒」，衝鋒時攻速/移速提升。',
     '⑥ 每關地形不同：右側海域寬窄不一，海盜會搭船渡海；擊沉船後海盜有機率溺死，也可能泅水上岸繼續進攻。每隔幾波會有「猛攻波」大量湧入。',
     '⑦ 全 40 關分成 4 個系列地圖(每10關一組，畫風不同)；每 5 關一隻船長👑，每 20 關(20/40)一隻魔王👹，帶有專屬技能。',
-    '⑧ 城牆上的主角會自動攻擊，全場擊殺數會讓他升級：Lv5選主職業(戰士/弓手/法師)即可開始在商店列用金幣學習/升級2個主動技能，Lv10再選最終職業讓技能覺醒更強。',
+    '⑧ 城牆上的主角會自動攻擊，全場擊殺數會讓他升級：Lv5選主職業(戰士/弓手/法師)即可開始在商店列用金幣學習/升級4個主動技能(A・S・Z・X)，Lv10再選最終職業讓技能覺醒更強。',
     '⑨ 阻止海盜抵達左側堡壘，堡壘耐久歸零即挑戰失敗！',
     '⑩ 鍵盤熱鍵(桌機)：F 購買新兵砲、A／S 施放英雄技能a／b、D 開關英雄技能商店。'
   ];
@@ -2759,6 +3055,8 @@ function handlePlayingClick(x,y){
 
   if(inRect(x,y,heroAbilityRects.a.x,heroAbilityRects.a.y,heroAbilityRects.a.w,heroAbilityRects.a.h)){ castAbility('a'); return; }
   if(inRect(x,y,heroAbilityRects.b.x,heroAbilityRects.b.y,heroAbilityRects.b.w,heroAbilityRects.b.h)){ castAbility('b'); return; }
+  if(inRect(x,y,heroAbilityRects.c.x,heroAbilityRects.c.y,heroAbilityRects.c.w,heroAbilityRects.c.h)){ castAbility('c'); return; }
+  if(inRect(x,y,heroAbilityRects.d.x,heroAbilityRects.d.y,heroAbilityRects.d.w,heroAbilityRects.d.h)){ castAbility('d'); return; }
   if(inRect(x,y,heroShopBtnRect.x,heroShopBtnRect.y,heroShopBtnRect.w,heroShopBtnRect.h)){ G.showHeroShop = true; AudioSys.sfx.uiClick(); return; }
 
   if(G.paused) return;
@@ -2843,7 +3141,7 @@ canvas.addEventListener('touchmove', onMove, {passive:false});
 
 // ============ 鍵盤熱鍵(桌機加速操作用) ============
 // F：購買新兵砲（等同點擊購買按鈕，再點戰場放置）
-// A／S：施放英雄技能 a／b（左手 home row，達到 Lv5 選定主職業後即可使用）
+// A／S／Z／X：施放英雄技能 a／b／c／d（左手 home row + 下排，達到 Lv5 選定主職業後即可使用）
 // D：開關英雄技能商店面板
 function onKeyDown(evt){
   if(G.screen !== 'playing') return;
@@ -2851,7 +3149,7 @@ function onKeyDown(evt){
   const tag = (evt.target && evt.target.tagName) || '';
   if(tag==='INPUT' || tag==='TEXTAREA') return;
   const key = evt.key.toLowerCase();
-  if(key !== 'f' && key !== 'a' && key !== 's' && key !== 'd') return;
+  if(key !== 'f' && key !== 'a' && key !== 's' && key !== 'd' && key !== 'z' && key !== 'x') return;
   evt.preventDefault();
 
   if(key==='f'){
@@ -2867,6 +3165,8 @@ function onKeyDown(evt){
   if(G.pendingHeroClass || G.pendingMerge || G.showHeroShop) return;
   if(key==='a'){ castAbility('a'); return; }
   if(key==='s'){ castAbility('b'); return; }
+  if(key==='z'){ castAbility('c'); return; }
+  if(key==='x'){ castAbility('d'); return; }
 }
 window.addEventListener('keydown', onKeyDown);
 
@@ -2921,7 +3221,14 @@ function loop(ts){
   const dt = Math.min(0.05, (ts-lastTs)/1000 || 0);
   lastTs = ts;
   update(dt);
+  let shaking = G.screen!=='menu' && G.shake && G.shake.time>0;
+  if(shaking){
+    const m = G.shake.mag * (G.shake.time>0.05 ? 1 : G.shake.time/0.05);
+    ctx.save();
+    ctx.translate((Math.random()-0.5)*2*m, (Math.random()-0.5)*2*m);
+  }
   if(G.screen==='menu') drawMenu(); else drawGame();
+  if(shaking) ctx.restore();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
