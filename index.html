@@ -82,8 +82,9 @@
 
 // ============ 版本資訊 / 更新紀錄 ============
 // 每次交付新版本時，在最上面加一筆紀錄（日期為設計討論當下，非實際檔案時間戳）
-const GAME_VERSION = "v0.11.0";
+const GAME_VERSION = "v0.11.1";
 const CHANGELOG = [
+  { v:"0.11.1", note:"新增本機存檔系統！瀏覽器關閉或重新整理後，「已解鎖關卡」與「英雄等級/擊殺數/職業/技能升級進度」都會自動保留(存於瀏覽器localStorage，僅限同一台裝置同一個瀏覽器)。每一關內的金幣、堡壘血量等單局暫時狀態則維持每次重玩重置，不受影響。之後更新遊戲版本(如新增運輸船)不會清空既有存檔，只會用預設值補齊新增的欄位。" },
   { v:"0.11.0", note:"新增「運輸船」敵人(第7關起解鎖)：本身不主動作戰、船體厚實，靠岸或被擊沉時會混合卸下最多3台載具，解決後期「塔合成完就不會壞」的問題──①遠程炮車：站得比一般弓箭手更遠，持續轟擊砲塔造成真正有感的傷害，逼玩家投資塔血量/優先集火；②突擊運兵車：速度快、血量厚，被擊毀時會爆出2名散兵繼續突圍，讓「先拆車還是先清兵」變成即時判斷；③護盾指揮車：本身不攻擊，但幫同船載具大幅加成移速與傷害，是優先擊殺的高價值目標。三者皆有專屬美術可一眼辨識。" },
   { v:"0.10.0", note:"英雄技能大幅擴充與強化！每個職業從2個主動技能增加為4個(a/b/c/d，鍵盤熱鍵A・S・Z・X)，每個主職業與最終職業都新增2個全新技能(旋風斬、破陣衝鋒、多重射擊、鷹眼追擊、閃電鏈、時間扭曲等)；技能商店面板改為2x2卡片版面同時顯示4個技能。全面加入技能特效系統：施放瞬間爆發光環與粒子、命中敵人炸開火花、大招畫面震動，攻擊技能更有打擊爽快感！右下角技能按鈕改為2x2小方陣，維持原本手指操作區域大小。" },
   { v:"0.9.1", note:"上方HUD資訊列文字全面放大：金幣圖示與數字、關卡/波次資訊、英雄等級職業擊殺數，字級明顯加大並加粗，填滿原本偏空的上方橫列空間，資訊更醒目好讀。" },
@@ -598,6 +599,51 @@ const G = {
   coinTimer: rand(4,7)
 };
 
+// ============ 存檔系統 ============
+// 只存「跨關卡的進度」：已解鎖關卡、英雄等級/擊殺數/職業/技能等級。
+// 每一關內的金幣、堡壘血量、場上敵人等「單局暫時狀態」不存，本來就該重玩該關時重置。
+const SAVE_KEY = 'ptmd_save_v1';
+function saveProgress(){
+  try{
+    const h = G.hero;
+    const data = {
+      unlocked: G.unlocked,
+      hero: {
+        kills: h.kills, level: h.level,
+        baseClass: h.baseClass, finalClass: h.finalClass,
+        abilityLevel: { a:h.abilityLevel.a, b:h.abilityLevel.b, c:h.abilityLevel.c, d:h.abilityLevel.d }
+      }
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  }catch(e){}
+}
+function loadProgress(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return;
+    const data = JSON.parse(raw);
+    if(data.unlocked && Array.isArray(data.unlocked)){
+      for(let i=0;i<G.unlocked.length && i<data.unlocked.length;i++){
+        if(data.unlocked[i]) G.unlocked[i] = true;
+      }
+    }
+    if(data.hero){
+      const h = data.hero;
+      if(typeof h.kills==='number') G.hero.kills = h.kills;
+      if(typeof h.level==='number') G.hero.level = h.level;
+      if(h.baseClass) G.hero.baseClass = h.baseClass;
+      if(h.finalClass) G.hero.finalClass = h.finalClass;
+      if(h.abilityLevel){
+        G.hero.abilityLevel.a = h.abilityLevel.a||0;
+        G.hero.abilityLevel.b = h.abilityLevel.b||0;
+        G.hero.abilityLevel.c = h.abilityLevel.c||0;
+        G.hero.abilityLevel.d = h.abilityLevel.d||0;
+      }
+    }
+  }catch(e){}
+}
+loadProgress();
+
 // ============ 座標輔助 ============
 function cellCenter(row,col){ return { x: GRID_X + col*CELL_W + CELL_W/2, y: GRID_Y + row*CELL_H + CELL_H/2 }; }
 function cellFromPoint(x,y){
@@ -708,6 +754,7 @@ function finishLevelWin(){
   G.levelComplete = true;
   if(G.level < MAX_LEVEL) G.unlocked[G.level+1] = true;
   AudioSys.sfx.levelWin();
+  saveProgress();
 }
 
 // ============ 產生敵人 ============
@@ -1266,7 +1313,7 @@ function updateEnemies(dt){
       }
     }
   }
-  if(G.baseHP <= 0 && !G.gameOver){ G.gameOver = true; AudioSys.sfx.gameOver(); }
+  if(G.baseHP <= 0 && !G.gameOver){ G.gameOver = true; AudioSys.sfx.gameOver(); saveProgress(); }
 }
 
 function updateCoins(dt){
@@ -1320,13 +1367,16 @@ function heroPos(){ return { x: GRID_X - 20, y: GRID_Y + ROWS*CELL_H/2 }; }
 function registerKill(){
   const h = G.hero;
   h.kills++;
+  let leveledUp = false;
   while(h.level-1 < KILL_THRESHOLDS.length && h.kills >= KILL_THRESHOLDS[h.level-1]){
     h.level++;
+    leveledUp = true;
     const pos = heroPos();
     spawnFloat(pos.x, pos.y-50, '英雄升級！Lv.'+h.level, '#ffd54f');
     if(h.level===5 && !h.baseClass){ G.pendingHeroClass = 'base'; }
     if(h.level===10 && h.baseClass && !h.finalClass){ G.pendingHeroClass = 'final'; }
   }
+  if(leveledUp) saveProgress();
 }
 
 function updateHero(dt){
@@ -3011,6 +3061,7 @@ function handleHeroClassChoiceClick(x,y){
       }
       G.pendingHeroClass = null;
       AudioSys.sfx.towerUpgrade();
+      saveProgress();
       return;
     }
   }
@@ -3026,6 +3077,7 @@ function handleHeroShopClick(x,y){
       G.gold -= r.cost;
       G.hero.abilityLevel[r.slot]++;
       AudioSys.sfx.towerUpgrade();
+      saveProgress();
       return;
     }
   }
