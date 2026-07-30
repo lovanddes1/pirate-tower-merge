@@ -3128,6 +3128,9 @@ function drawMenu(){
   // 版本號 + 更新紀錄按鈕
   ctx.textAlign='right'; ctx.fillStyle='#5d7fa0'; ctx.font='12px sans-serif';
   ctx.fillText(GAME_VERSION, CANVAS_W-16, CANVAS_H-14);
+  ctx.font='11px sans-serif'; ctx.globalAlpha=0.55;
+  ctx.fillText('by dingjyun-lovanddes', CANVAS_W-16, CANVAS_H-58);
+  ctx.globalAlpha=1;
   const clW=100, clH=28, clX=CANVAS_W-16-clW, clY=CANVAS_H-46;
   changelogBtnRect = {x:clX,y:clY,w:clW,h:clH};
   drawButton(clX,clY,clW,clH,'📜 更新紀錄','#2e4a63',12);
