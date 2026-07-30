@@ -67,6 +67,53 @@
       transform: rotate(90deg);
     }
   }
+
+  /* ============ 線上排行榜 / 取名畫面 ============ */
+  .pt-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(6,15,26,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(8px,1.4vw,14px);
+    color: #cfe3f5; text-align: center;
+    border-radius: 10px;
+    z-index: 20;
+    padding: 4%;
+  }
+  .pt-overlay.hidden { display: none; }
+  .pt-overlay h2 { font-size: clamp(18px,3.6vw,28px); margin: 0; color: #ffd54f; }
+  .pt-overlay p { font-size: clamp(11px,1.7vw,14px); opacity: 0.85; margin: 0; max-width: 420px; }
+  .pt-btn {
+    font-family: inherit; font-weight: 700; font-size: clamp(12px,1.8vw,15px);
+    padding: 0.55em 1.2em; border-radius: 8px; border: 2px solid #6b4423; cursor: pointer;
+    color: #1b2a35; background: linear-gradient(180deg,#ffe08a,#ffd54f);
+    box-shadow: 0 3px 0 #b9821f;
+    white-space: nowrap;
+  }
+  .pt-btn.secondary { color: #cfe3f5; background: #37474f; box-shadow: 0 3px 0 #22303a; }
+  .pt-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
+  .pt-btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  #pt-name-prompt-input {
+    font-family: inherit; font-size: clamp(13px,2vw,16px);
+    padding: 0.5em 1em; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(0,0,0,0.3); color: #cfe3f5; outline: none;
+    width: min(80vw,300px); text-align: center;
+  }
+  #pt-lb-submit-row { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 480px; }
+  #pt-lb-status { font-size: clamp(10px,1.4vw,12.5px); opacity: 0.8; min-height: 1.3em; margin: 0; }
+  #pt-leaderboard-list {
+    width: 100%; max-width: 480px; max-height: 44vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 0.4em; padding: 0 2px 4px 2px;
+  }
+  .pt-lb-row {
+    display: flex; align-items: center; gap: 0.6em;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px; padding: 0.4em 0.7em; text-align: left; font-size: clamp(11px,1.7vw,14px);
+  }
+  .pt-lb-row.pt-lb-row-me { border-color: #ffd54f; background: rgba(255,213,79,0.12); }
+  .pt-lb-rank { font-weight: 800; color: #ffd54f; width: 2.4em; flex-shrink: 0; }
+  .pt-lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pt-lb-score { font-weight: 800; flex-shrink: 0; }
+  .pt-lb-level { opacity: 0.75; flex-shrink: 0; font-size: 0.9em; width: 4.4em; text-align: right; }
 </style>
 </head>
 <body>
@@ -75,6 +122,26 @@
   <button id="muteBtn" type="button">🔊</button>
   <canvas id="game"></canvas>
   <div id="hint">滑鼠點擊操作；手機/平板可用觸控點按<br>建議點左上角「⛶全螢幕橫向」或將手機轉為橫向以獲得最佳畫面<br>鍵盤熱鍵：F 購買新兵砲／A・S・Z・X 施放英雄技能(共4個)／D 英雄技能商店</div>
+  <div class="pt-overlay hidden" id="pt-leaderboard-screen">
+    <h2>🏆 線上排行榜</h2>
+    <div id="pt-lb-submit-row">
+      <span id="pt-lb-current-name"></span>
+      <button class="pt-btn secondary" id="pt-lb-name-btn" type="button">設定/更改名字</button>
+      <button class="pt-btn secondary" id="pt-lb-refresh-btn" type="button">🔄</button>
+    </div>
+    <p id="pt-lb-status"></p>
+    <div id="pt-leaderboard-list"></div>
+    <button class="pt-btn secondary" id="pt-leaderboard-back-btn" type="button">返回選單</button>
+  </div>
+  <div class="pt-overlay hidden" id="pt-name-prompt-screen">
+    <h2>幫你的船長取個名字吧！</h2>
+    <p>這個名字會顯示在線上排行榜上,之後可以到排行榜頁面重新設定。</p>
+    <input type="text" id="pt-name-prompt-input" maxlength="12" placeholder="輸入你的名字">
+    <div class="pt-btn-row">
+      <button class="pt-btn" id="pt-name-prompt-confirm-btn" type="button">確定</button>
+      <button class="pt-btn secondary" id="pt-name-prompt-skip-btn" type="button">略過</button>
+    </div>
+  </div>
 </div>
 <script>
 (function(){
@@ -644,6 +711,130 @@ function loadProgress(){
 }
 loadProgress();
 
+// ============ 線上排行榜(Google Apps Script + Google Sheet後台,與slime遊戲共用同一支後端) ============
+// 後台依 game 參數決定讀寫哪個分頁,這邊固定填 pirate-tower-merge,對應 Leaderboard_pirate-tower-merge 分頁。
+// 排行榜分數採用「英雄累積擊殺數」,關卡欄位記錄剛過關的關卡數(取最高紀錄那次的關卡)。
+const LEADERBOARD_URL = "https://script.google.com/macros/s/AKfycbzwJitG5BzV5D2Gn0QgN77ButChZMe_T4IuymQbPWkk-tpJKrQ8LKe_3fHSV5-doknC/exec";
+const LB_GAME_KEY = "pirate-tower-merge";
+const PT_NAME_KEY = 'ptmd_player_name';
+
+function lbUrlReady(){ return !!LEADERBOARD_URL && LEADERBOARD_URL.indexOf("PASTE_YOUR") !== 0; }
+function lbEscapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function getPlayerName(){
+  try{ return localStorage.getItem(PT_NAME_KEY) || ""; }catch(e){ return ""; }
+}
+function setPlayerName(name){
+  try{ localStorage.setItem(PT_NAME_KEY, name); }catch(e){}
+}
+
+const ptLbScreen = document.getElementById('pt-leaderboard-screen');
+const ptLbListEl = document.getElementById('pt-leaderboard-list');
+const ptLbCurrentNameEl = document.getElementById('pt-lb-current-name');
+const ptLbStatusEl = document.getElementById('pt-lb-status');
+const ptLbRefreshBtn = document.getElementById('pt-lb-refresh-btn');
+const ptLbNameBtn = document.getElementById('pt-lb-name-btn');
+const ptLbBackBtn = document.getElementById('pt-leaderboard-back-btn');
+const ptNamePromptScreen = document.getElementById('pt-name-prompt-screen');
+const ptNamePromptInput = document.getElementById('pt-name-prompt-input');
+const ptNamePromptConfirmBtn = document.getElementById('pt-name-prompt-confirm-btn');
+const ptNamePromptSkipBtn = document.getElementById('pt-name-prompt-skip-btn');
+
+function ptRefreshCurrentNameLabel(){
+  const name = getPlayerName();
+  ptLbCurrentNameEl.textContent = name ? ('目前名字：' + name) : '尚未設定名字';
+}
+function ptShowLeaderboard(){
+  ptLbScreen.classList.remove('hidden');
+  ptLbStatusEl.textContent = '';
+  ptRefreshCurrentNameLabel();
+  ptLbFetchScores();
+}
+function ptHideLeaderboard(){
+  ptLbScreen.classList.add('hidden');
+}
+function ptLbFetchScores(){
+  if(!lbUrlReady()){
+    ptLbListEl.innerHTML = '<p style="opacity:0.7;">排行榜尚未設定伺服器網址</p>';
+    return;
+  }
+  ptLbListEl.innerHTML = '<p style="opacity:0.7;">讀取排行榜中...</p>';
+  fetch(LEADERBOARD_URL + "?game=" + encodeURIComponent(LB_GAME_KEY))
+    .then(r => r.json())
+    .then(data => {
+      if(!data || !data.ok) throw new Error((data && data.error) || "error");
+      ptLbRenderScores(data.scores || []);
+    })
+    .catch(() => {
+      ptLbListEl.innerHTML = '<p style="opacity:0.7;">讀取失敗,請稍後再試</p>';
+    });
+}
+function ptLbRenderScores(scores){
+  if(!scores.length){
+    ptLbListEl.innerHTML = '<p style="opacity:0.7;">目前還沒有紀錄,快來搶頭香！</p>';
+    return;
+  }
+  const myName = getPlayerName();
+  ptLbListEl.innerHTML = scores.map((s, i) => {
+    const isMe = myName && s.name === myName;
+    return '<div class="pt-lb-row' + (isMe ? " pt-lb-row-me" : "") + '">' +
+      '<span class="pt-lb-rank">#' + (i + 1) + '</span>' +
+      '<span class="pt-lb-name">' + lbEscapeHtml(s.name) + '</span>' +
+      '<span class="pt-lb-score">擊殺 ' + s.score + '</span>' +
+      '<span class="pt-lb-level">第' + s.level + '關</span>' +
+    '</div>';
+  }).join("");
+}
+function ptShowNamePrompt(){
+  ptNamePromptInput.value = getPlayerName();
+  ptLbScreen.classList.add('hidden');
+  ptNamePromptScreen.classList.remove('hidden');
+  ptNamePromptInput.focus();
+}
+function ptConfirmNamePrompt(){
+  let name = (ptNamePromptInput.value || "").trim().slice(0, 12);
+  if(!name) name = "無名船長";
+  setPlayerName(name);
+  ptNamePromptScreen.classList.add('hidden');
+  ptLbScreen.classList.remove('hidden');
+  ptRefreshCurrentNameLabel();
+}
+function ptLbAutoSubmit(scoreValue, levelValue){
+  const name = getPlayerName();
+  if(!lbUrlReady() || !name) return;
+  fetch(LEADERBOARD_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      game: LB_GAME_KEY,
+      name: name,
+      score: scoreValue,
+      level: levelValue,
+      diff: "-"
+    })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if(!ptLbScreen.classList.contains('hidden') && data){
+        if(data.ok){
+          ptLbStatusEl.textContent = '成績已上傳！';
+          ptLbFetchScores();
+        } else if(data.error === "cooldown"){
+          ptLbStatusEl.textContent = '上傳太頻繁,請' + (data.retryAfter || "?") + '秒後再試';
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+ptLbRefreshBtn.addEventListener('click', () => { ptLbFetchScores(); });
+ptLbNameBtn.addEventListener('click', () => { ptShowNamePrompt(); });
+ptLbBackBtn.addEventListener('click', () => { ptHideLeaderboard(); });
+ptNamePromptConfirmBtn.addEventListener('click', () => { ptConfirmNamePrompt(); });
+ptNamePromptSkipBtn.addEventListener('click', () => { ptConfirmNamePrompt(); });
+ptNamePromptInput.addEventListener('keydown', (evt) => { if(evt.key === 'Enter') ptConfirmNamePrompt(); });
+
 // ============ 座標輔助 ============
 function cellCenter(row,col){ return { x: GRID_X + col*CELL_W + CELL_W/2, y: GRID_Y + row*CELL_H + CELL_H/2 }; }
 function cellFromPoint(x,y){
@@ -755,6 +946,7 @@ function finishLevelWin(){
   if(G.level < MAX_LEVEL) G.unlocked[G.level+1] = true;
   AudioSys.sfx.levelWin();
   saveProgress();
+  ptLbAutoSubmit(G.hero.kills, G.level);
 }
 
 // ============ 產生敵人 ============
@@ -2940,10 +3132,15 @@ function drawMenu(){
   changelogBtnRect = {x:clX,y:clY,w:clW,h:clH};
   drawButton(clX,clY,clW,clH,'📜 更新紀錄','#2e4a63',12);
 
+  const lbW=100, lbH=28, lbX=clX-10-lbW, lbY=clY;
+  leaderboardBtnRect = {x:lbX,y:lbY,w:lbW,h:lbH};
+  drawButton(lbX,lbY,lbW,lbH,'🏆 排行榜','#2e4a63',12);
+
   if(G.showChangelog) drawChangelogOverlay();
 }
 
 let changelogBtnRect = {x:0,y:0,w:0,h:0};
+let leaderboardBtnRect = {x:0,y:0,w:0,h:0};
 let changelogCloseRect = {x:0,y:0,w:0,h:0};
 function drawChangelogOverlay(){
   ctx.save();
@@ -3010,6 +3207,11 @@ function handleMenuClick(x,y){
   }
   if(inRect(x,y,changelogBtnRect.x,changelogBtnRect.y,changelogBtnRect.w,changelogBtnRect.h)){
     G.showChangelog = true;
+    return;
+  }
+  if(inRect(x,y,leaderboardBtnRect.x,leaderboardBtnRect.y,leaderboardBtnRect.w,leaderboardBtnRect.h)){
+    AudioSys.sfx.uiClick();
+    ptShowLeaderboard();
     return;
   }
   const {boxW, boxH, gapX, gapY, startX, startY} = menuGridLayout();
